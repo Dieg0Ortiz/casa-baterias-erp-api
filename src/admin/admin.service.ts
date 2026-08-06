@@ -19,6 +19,7 @@ interface FilaVenta {
   total: number;
   estado: string;
   created_at: string;
+  metodo_pago?: string;
 }
 
 interface FilaItemVenta {
@@ -96,7 +97,7 @@ export class AdminService {
         this.client
           .from('ventas')
           .select(
-            'id, folio, sucursal_id, usuario_id, total, estado, created_at',
+            'id, folio, sucursal_id, usuario_id, total, estado, created_at, metodo_pago',
           )
           .eq('estado', 'activa')
           .gte('created_at', hoy.inicio)
@@ -225,7 +226,9 @@ export class AdminService {
     // Últimas 8 ventas activas (todas las sucursales) para el feed del panel.
     const { data: ultimasRes, error: ultimasError } = await this.client
       .from('ventas')
-      .select('id, folio, sucursal_id, usuario_id, total, estado, created_at')
+      .select(
+        'id, folio, sucursal_id, usuario_id, total, estado, created_at, metodo_pago',
+      )
       .eq('estado', 'activa')
       .order('created_at', { ascending: false })
       .limit(8);
@@ -238,6 +241,7 @@ export class AdminService {
       sucursal: nombreSucursal.get(v.sucursal_id) ?? null,
       usuario: nombreUsuario.get(v.usuario_id) ?? null,
       created_at: v.created_at,
+      metodo_pago: v.metodo_pago ?? null,
     }));
 
     return {
@@ -278,7 +282,9 @@ export class AdminService {
   async reporteVentas(dto: VentasReporteDto) {
     let query = this.client
       .from('ventas')
-      .select('id, folio, sucursal_id, usuario_id, total, estado, created_at')
+      .select(
+        'id, folio, sucursal_id, usuario_id, total, estado, created_at, metodo_pago',
+      )
       .eq('estado', 'activa')
       .order('created_at', { ascending: false });
 
@@ -370,6 +376,7 @@ export class AdminService {
         sucursal: nombreSucursal.get(v.sucursal_id) ?? null,
         usuario: nombreUsuario.get(v.usuario_id) ?? null,
         created_at: v.created_at,
+        metodo_pago: v.metodo_pago ?? null,
         items: items.map((i) => ({
           producto: i.productos?.modelo ?? null,
           cantidad: i.cantidad,

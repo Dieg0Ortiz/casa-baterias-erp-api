@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  IsIn,
   Min,
   ValidateIf,
   ValidateNested,
@@ -55,4 +56,11 @@ export class RegistrarVentaDto {
   @ValidateNested({ each: true })
   @Type(() => VentaItemDto)
   items!: VentaItemDto[];
+
+  // Método de pago: efectivo o tarjeta (por defecto efectivo).
+  @IsOptional()
+  @IsIn(['efectivo', 'tarjeta'], {
+    message: 'El método de pago debe ser efectivo o tarjeta',
+  })
+  metodo_pago?: 'efectivo' | 'tarjeta';
 }
