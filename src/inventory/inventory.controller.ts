@@ -8,7 +8,10 @@ import {
 } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
 import { InventoryService } from './inventory.service';
-import { TransferirInventarioDto } from './transferencia.dto';
+import {
+  ReabastecerInventarioDto,
+  TransferirInventarioDto,
+} from './transferencia.dto';
 
 @Controller('inventory')
 export class InventoryController {
@@ -32,5 +35,11 @@ export class InventoryController {
   @Roles('administrador')
   listarTransferencias() {
     return this.inventoryService.listarTransferencias();
+  }
+
+  @Post('reabastecer')
+  @Roles('administrador')
+  reabastecer(@Body() dto: ReabastecerInventarioDto) {
+    return this.inventoryService.reabastecer(dto);
   }
 }

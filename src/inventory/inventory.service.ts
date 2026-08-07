@@ -1,7 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
 import { SupabaseService } from '../supabase/supabase.service';
-import { TransferirInventarioDto } from './transferencia.dto';
+import {
+  ReabastecerInventarioDto,
+  TransferirInventarioDto,
+} from './transferencia.dto';
 
 // Fila de la consulta de inventario (join inventario -> productos ->
 // marcas). El precio y la existencia SIEMPRE vienen del servidor.
@@ -108,6 +111,58 @@ export class InventoryService {
       throw new BadRequestException(this.mensajeRpc(error));
     }
     return data;
+  }
+
+  // Reabastecimiento de inventario / entrada de mercancía: incrementa
+  // las existencias de un producto existente en la sucursal indicada.
+  async reabastecer(dto: ReabastecerInventarioDto) {
+    const { data, error } = await this.rpc('reabastecer_inventario', {
+      p_producto_id: dto.producto_id,
+      p_sucursal_id: dto.sucursal_id,
+      p_cantidad: dto.cantidad,
+      p_nota: dto.nota ?? null,
+    });
+
+    if (!error) {
+      return data;
+    }
+
+    // Si la RPC aún no está creada en la BD, ejecutamos la actualización
+    // directa con el cliente de Supabase autenticado.
+    const { data: existencia, error: errBusq } = await this.client
+      .from('inventario')
+      .select('id, cantidad, cascos_disponibles')
+      .eq('producto_id', dto.producto_id)
+      .eq('sucursal_id', dto.sucursal_id)
+      .maybeSingle();
+
+    if (errBusq) {
+      throw new BadRequestException(this.mensajeRpc(error || errBusq));
+    }
+
+    if (existencia) {
+      const { data: actualizado, error: errUpd } = await this.client
+        .from('inventario')
+        .update({ cantidad: existencia.cantidad + dto.cantidad })
+        .eq('id', existencia.id)
+        .select()
+        .single();
+      this.throwIfError(errUpd);
+      return actualizado;
+    } else {
+      const { data: insertado, error: errIns } = await this.client
+        .from('inventario')
+        .insert({
+          producto_id: dto.producto_id,
+          sucursal_id: dto.sucursal_id,
+          cantidad: dto.cantidad,
+          cascos_disponibles: 0,
+        })
+        .select()
+        .single();
+      this.throwIfError(errIns);
+      return insertado;
+    }
   }
 
   // Historial de transferencias (solo administrador). Se componen los
