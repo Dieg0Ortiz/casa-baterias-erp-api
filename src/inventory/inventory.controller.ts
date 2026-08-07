@@ -9,6 +9,7 @@ import {
 import { Roles } from '../common/decorators/roles.decorator';
 import { InventoryService } from './inventory.service';
 import {
+  CorregirSucursalDto,
   ReabastecerInventarioDto,
   TransferirInventarioDto,
 } from './transferencia.dto';
@@ -41,5 +42,13 @@ export class InventoryController {
   @Roles('administrador')
   reabastecer(@Body() dto: ReabastecerInventarioDto) {
     return this.inventoryService.reabastecer(dto);
+  }
+
+  // Corrección de sucursal (alta equivocada): mueve TODA la existencia
+  // sin registrar transferencia (solo administrador).
+  @Post('corregir-sucursal')
+  @Roles('administrador')
+  corregirSucursal(@Body() dto: CorregirSucursalDto) {
+    return this.inventoryService.corregirSucursal(dto);
   }
 }

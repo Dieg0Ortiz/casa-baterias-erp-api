@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
+  CorregirSucursalDto,
   ReabastecerInventarioDto,
   TransferirInventarioDto,
 } from './transferencia.dto';
@@ -106,6 +107,21 @@ export class InventoryService {
       p_destino: dto.sucursal_destino_id,
       p_cantidad: dto.cantidad,
       p_nota: dto.nota ?? null,
+    });
+    if (error) {
+      throw new BadRequestException(this.mensajeRpc(error));
+    }
+    return data;
+  }
+
+  // Corrección de sucursal (alta equivocada): mueve TODA la existencia
+  // del producto de la sucursal de origen a la correcta sin registrar
+  // una transferencia (RPC corregir_sucursal_producto).
+  async corregirSucursal(dto: CorregirSucursalDto) {
+    const { data, error } = await this.rpc('corregir_sucursal_producto', {
+      p_producto_id: dto.producto_id,
+      p_origen: dto.sucursal_origen_id,
+      p_destino: dto.sucursal_destino_id,
     });
     if (error) {
       throw new BadRequestException(this.mensajeRpc(error));
