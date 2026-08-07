@@ -48,3 +48,17 @@ export class CorregirSucursalDto {
   @IsUUID('4', { message: 'Sucursal correcta inválida' })
   sucursal_destino_id!: string;
 }
+
+// Eliminar o ajustar existencias de un producto en una sucursal específica.
+export class EliminarExistenciaDto {
+  @IsUUID('4', { message: 'Producto inválido' })
+  producto_id!: string;
+
+  @IsUUID('4', { message: 'Sucursal inválida' })
+  sucursal_id!: string;
+
+  @IsOptional()
+  @IsInt({ message: 'Cantidad inválida' })
+  @Min(1, { message: 'La cantidad a retirar debe ser al menos 1' })
+  cantidad?: number;
+}

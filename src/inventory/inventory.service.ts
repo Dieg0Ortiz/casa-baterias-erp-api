@@ -3,6 +3,7 @@ import { PostgrestError } from '@supabase/supabase-js';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
   CorregirSucursalDto,
+  EliminarExistenciaDto,
   ReabastecerInventarioDto,
   TransferirInventarioDto,
 } from './transferencia.dto';
@@ -179,6 +180,40 @@ export class InventoryService {
       this.throwIfError(errIns);
       return insertado;
     }
+  }
+
+  // Eliminar o vaciar existencias de un producto en una sucursal.
+  // Permite reducir por merma/ajuste o vaciar a 0.
+  async eliminarExistencia(dto: EliminarExistenciaDto) {
+    const { data: existencia, error: errBusq } = await this.client
+      .from('inventario')
+      .select('id, cantidad')
+      .eq('producto_id', dto.producto_id)
+      .eq('sucursal_id', dto.sucursal_id)
+      .maybeSingle();
+
+    if (errBusq) {
+      throw new BadRequestException(errBusq.message);
+    }
+
+    if (!existencia) {
+      return { success: true, cantidad: 0 };
+    }
+
+    const nuevaCantidad =
+      dto.cantidad !== undefined
+        ? Math.max(0, existencia.cantidad - dto.cantidad)
+        : 0;
+
+    const { data, error } = await this.client
+      .from('inventario')
+      .update({ cantidad: nuevaCantidad })
+      .eq('id', existencia.id)
+      .select()
+      .single();
+
+    this.throwIfError(error);
+    return data;
   }
 
   // Historial de transferencias (solo administrador). Se componen los

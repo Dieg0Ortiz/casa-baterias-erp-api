@@ -10,6 +10,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { InventoryService } from './inventory.service';
 import {
   CorregirSucursalDto,
+  EliminarExistenciaDto,
   ReabastecerInventarioDto,
   TransferirInventarioDto,
 } from './transferencia.dto';
@@ -50,5 +51,12 @@ export class InventoryController {
   @Roles('administrador')
   corregirSucursal(@Body() dto: CorregirSucursalDto) {
     return this.inventoryService.corregirSucursal(dto);
+  }
+
+  // Eliminar o vaciar existencias de un producto en una sucursal.
+  @Post('eliminar-existencia')
+  @Roles('administrador')
+  eliminarExistencia(@Body() dto: EliminarExistenciaDto) {
+    return this.inventoryService.eliminarExistencia(dto);
   }
 }
