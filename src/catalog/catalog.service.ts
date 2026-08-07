@@ -3,14 +3,10 @@ import { PostgrestError } from '@supabase/supabase-js';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
   ActualizarMarcaDto,
+  ActualizarProductoDto,
   CrearMarcaDto,
   CrearProductoDto,
 } from './catalog.dto';
-
-type RpcResult = {
-  data: Record<string, unknown> | null;
-  error: PostgrestError | null;
-};
 
 @Injectable()
 export class CatalogService {
@@ -20,17 +16,20 @@ export class CatalogService {
     return this.supabase.getClient();
   }
 
-  private async rpc(
-    nombre: string,
-    args: Record<string, unknown>,
-  ): Promise<RpcResult> {
-    return (await this.client.rpc(nombre, args)) as RpcResult;
-  }
-
   private throwIfError(error: PostgrestError | null) {
     if (error) {
       throw new BadRequestException(error.message);
     }
+  }
+
+  private async rpc(
+    nombre: string,
+    args: Record<string, unknown>,
+  ): Promise<{ data: unknown; error: PostgrestError | null }> {
+    return (await this.client.rpc(nombre, args)) as {
+      data: unknown;
+      error: PostgrestError | null;
+    };
   }
 
   // ------------------------------------------------------------------
@@ -131,6 +130,32 @@ export class CatalogService {
     return data;
   }
 
+  async actualizarProducto(id: string, dto: ActualizarProductoDto) {
+    // Si viene cambio de precio, ejecutamos la RPC de precio
+    if (dto.precio !== undefined) {
+      await this.actualizarPrecio(id, dto.precio);
+    }
+
+    const cambios: Record<string, unknown> = {};
+    if (dto.modelo !== undefined) cambios.modelo = dto.modelo;
+    if (dto.descripcion !== undefined) cambios.descripcion = dto.descripcion;
+    if (dto.marca_id !== undefined) cambios.marca_id = dto.marca_id;
+    if (dto.requiere_casco !== undefined) cambios.requiere_casco = dto.requiere_casco;
+
+    if (Object.keys(cambios).length > 0) {
+      const { data, error } = await this.client
+        .from('productos')
+        .update(cambios)
+        .eq('id', id)
+        .select()
+        .single();
+      this.throwIfError(error);
+      return data;
+    }
+
+    return { id, actualizado: true };
+  }
+
   async actualizarPrecio(id: string, precio: number) {
     const { data, error } = await this.rpc('actualizar_precio', {
       p_producto_id: id,
@@ -153,10 +178,6 @@ export class CatalogService {
   }
 
   private mensajeRpc(error: PostgrestError): string {
-    // Las funciones RPC levantan excepciones con mensajes pensados para
-    // el usuario final (ej. "Solo un administrador puede cambiar precios").
-    // PostgREST los entrega normalmente en `details`; se usa como respaldo
-    // `message`.
     const detalle = (error.details ?? '').trim();
     return detalle.length > 0 ? detalle : error.message;
   }

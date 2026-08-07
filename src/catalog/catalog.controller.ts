@@ -13,6 +13,7 @@ import { CatalogService } from './catalog.service';
 import {
   ActualizarMarcaDto,
   ActualizarPrecioDto,
+  ActualizarProductoDto,
   CrearMarcaDto,
   CrearProductoDto,
 } from './catalog.dto';
@@ -68,6 +69,15 @@ export class CatalogController {
   @Post('productos')
   crearProducto(@Body() dto: CrearProductoDto) {
     return this.catalogService.crearProducto(dto);
+  }
+
+  @Patch('productos/:id')
+  @Roles('administrador')
+  actualizarProducto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ActualizarProductoDto,
+  ) {
+    return this.catalogService.actualizarProducto(id, dto);
   }
 
   @Patch('productos/:id/precio')

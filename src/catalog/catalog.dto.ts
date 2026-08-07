@@ -67,6 +67,29 @@ export class CrearProductoDto {
   cantidad_inicial?: number;
 }
 
+export class ActualizarProductoDto {
+  @IsOptional()
+  @IsUUID('4', { message: 'Marca inválida' })
+  marca_id?: string;
+
+  @IsOptional()
+  @IsString({ message: 'El modelo es obligatorio' })
+  modelo?: string;
+
+  @IsOptional()
+  @IsString()
+  descripcion?: string;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Precio inválido' })
+  @Min(0, { message: 'El precio no puede ser negativo' })
+  precio?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  requiere_casco?: boolean;
+}
+
 export class ActualizarPrecioDto {
   @IsNumber({}, { message: 'Precio inválido' })
   @Min(0, { message: 'El precio no puede ser negativo' })
