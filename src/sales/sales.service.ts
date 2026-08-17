@@ -17,6 +17,7 @@ export interface Venta {
   estado: string;
   created_at: string;
   metodo_pago?: string;
+  desglose_pago?: Array<{ metodo: string; monto: number; referencia?: string }>;
 }
 
 @Injectable()
@@ -56,6 +57,7 @@ export class SalesService {
       p_corte_caja_id: dto.corte_caja_id ?? null,
       p_items: dto.items,
       p_metodo_pago: dto.metodo_pago ?? 'efectivo',
+      p_desglose_pago: dto.desglose_pago ?? null,
     });
     if (error) {
       throw new BadRequestException(this.mensajeRpc(error));
@@ -69,10 +71,10 @@ export class SalesService {
     const { data, error } = await this.client
       .from('ventas')
       .select(
-        'id, folio, sucursal_id, usuario_id, total, estado, created_at, metodo_pago',
+        'id, folio, sucursal_id, usuario_id, total, estado, created_at, metodo_pago, desglose_pago',
       )
       .order('created_at', { ascending: false });
     this.throwIfError(error);
-    return data ?? [];
+    return data as Venta[];
   }
 }

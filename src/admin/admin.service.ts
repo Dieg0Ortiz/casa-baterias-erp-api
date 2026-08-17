@@ -20,6 +20,7 @@ interface FilaVenta {
   estado: string;
   created_at: string;
   metodo_pago?: string;
+  desglose_pago?: Array<{ metodo: string; monto: number; referencia?: string }> | null;
 }
 
 interface FilaItemVenta {
@@ -293,7 +294,7 @@ export class AdminService {
     let query = this.client
       .from('ventas')
       .select(
-        'id, folio, sucursal_id, usuario_id, total, estado, created_at, metodo_pago',
+        'id, folio, sucursal_id, usuario_id, total, estado, created_at, metodo_pago, desglose_pago',
       )
       .eq('estado', 'activa')
       .order('created_at', { ascending: false });
@@ -389,6 +390,7 @@ export class AdminService {
         usuario: nombreUsuario.get(v.usuario_id) ?? null,
         created_at: v.created_at,
         metodo_pago: v.metodo_pago ?? null,
+        desglose_pago: v.desglose_pago ?? null,
         items: items.map((i) => ({
           producto: i.productos?.modelo ?? null,
           cantidad: i.cantidad,

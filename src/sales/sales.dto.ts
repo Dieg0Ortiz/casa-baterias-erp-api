@@ -4,6 +4,7 @@ import {
   IsArray,
   IsBoolean,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -50,6 +51,22 @@ export class VentaItemDto {
   tipo_precio?: 'default' | 'precio_2' | 'precio_3';
 }
 
+export class PagoParcialDto {
+  @IsIn(['efectivo', 'tarjeta', 'tarjeta_debito', 'tarjeta_credito', 'transferencia'], {
+    message:
+      'El método de pago parcial debe ser efectivo, tarjeta_debito, tarjeta_credito o transferencia',
+  })
+  metodo!: 'efectivo' | 'tarjeta' | 'tarjeta_debito' | 'tarjeta_credito' | 'transferencia';
+
+  @IsNumber({}, { message: 'Monto inválido' })
+  @Min(0.01, { message: 'El monto debe ser mayor a 0' })
+  monto!: number;
+
+  @IsOptional()
+  @IsString()
+  referencia?: string;
+}
+
 export class RegistrarVentaDto {
   @IsUUID('4', { message: 'Sucursal inválida' })
   sucursal_id!: string;
@@ -64,10 +81,26 @@ export class RegistrarVentaDto {
   @Type(() => VentaItemDto)
   items!: VentaItemDto[];
 
-  // Método de pago: efectivo o tarjeta (por defecto efectivo).
+  // Método de pago: efectivo, tarjeta_debito, tarjeta_credito, transferencia o mixto
   @IsOptional()
-  @IsIn(['efectivo', 'tarjeta'], {
-    message: 'El método de pago debe ser efectivo o tarjeta',
-  })
-  metodo_pago?: 'efectivo' | 'tarjeta';
+  @IsIn(
+    ['efectivo', 'tarjeta', 'tarjeta_debito', 'tarjeta_credito', 'transferencia', 'mixto'],
+    {
+      message:
+        'El método de pago debe ser efectivo, tarjeta_debito, tarjeta_credito, transferencia o mixto',
+    },
+  )
+  metodo_pago?:
+    | 'efectivo'
+    | 'tarjeta'
+    | 'tarjeta_debito'
+    | 'tarjeta_credito'
+    | 'transferencia'
+    | 'mixto';
+
+  @IsOptional()
+  @IsArray({ message: 'El desglose de pagos debe ser una lista' })
+  @ValidateNested({ each: true })
+  @Type(() => PagoParcialDto)
+  desglose_pago?: PagoParcialDto[];
 }
