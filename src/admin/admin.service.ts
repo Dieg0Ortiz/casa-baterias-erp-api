@@ -442,7 +442,12 @@ export class AdminService {
 
     // Obtener datos relacionados
     const ventaIds = [...new Set(cascos.map((c) => c.venta_id))];
-    const productoIds = [...new Set(cascos.map((c) => c.producto_id))];
+    const productoIds = [
+      ...new Set([
+        ...cascos.map((c) => c.producto_id),
+        ...cascos.map((c) => c.casco_producto_id).filter((id): id is string => Boolean(id)),
+      ]),
+    ];
     const sucursalIds = [...new Set(cascos.map((c) => c.sucursal_id))];
 
     const [resVentas, resProductos, resSucursales, resUsuarios] =
@@ -494,6 +499,10 @@ export class AdminService {
       id: c.id,
       folio: folioVenta.get(c.venta_id) ?? null,
       producto: nombreProducto.get(c.producto_id) ?? null,
+      casco_producto_id: c.casco_producto_id ?? null,
+      casco_recibido: c.casco_producto_id
+        ? nombreProducto.get(c.casco_producto_id) ?? null
+        : null,
       sucursal: nombreSucursal.get(c.sucursal_id) ?? null,
       comision_cobrada: Number(c.comision_cobrada),
       fecha_limite: c.fecha_limite,
