@@ -23,6 +23,12 @@ export class AdminController {
     return this.adminService.reporteVentas(dto);
   }
 
+  @Roles('administrador')
+  @Get('reportes/ventas')
+  reportesVentasAlias(@Query() dto: VentasReporteDto) {
+    return this.adminService.reporteVentas(dto);
+  }
+
   // Empleados para el filtro del reporte (Fase 8). Solo administrador.
   @Roles('administrador')
   @Get('usuarios')
