@@ -1,6 +1,20 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
-import { ResolverCascoDto, VentasReporteDto } from './admin.dto';
+import {
+  ActualizarUsuarioDto,
+  CrearUsuarioDto,
+  ResolverCascoDto,
+  VentasReporteDto,
+} from './admin.dto';
 import { AdminService } from './admin.service';
 
 @Controller('admin')
@@ -13,6 +27,13 @@ export class AdminController {
   @Get('dashboard')
   dashboard() {
     return this.adminService.dashboard();
+  }
+
+  // Sucursales activas para asignación de trabajadores.
+  @Roles('administrador')
+  @Get('sucursales')
+  sucursales() {
+    return this.adminService.listarSucursales();
   }
 
   // Reporte de ventas filtrable (Fase 8): sucursal, fechas, empleado y
@@ -29,11 +50,28 @@ export class AdminController {
     return this.adminService.reporteVentas(dto);
   }
 
-  // Empleados para el filtro del reporte (Fase 8). Solo administrador.
+  // Listado de usuarios/empleados del sistema. Solo administrador.
   @Roles('administrador')
   @Get('usuarios')
   usuarios() {
     return this.adminService.listarUsuarios();
+  }
+
+  // Crear nuevo usuario (trabajador / administrador). Solo administrador.
+  @Roles('administrador')
+  @Post('usuarios')
+  crearUsuario(@Body() dto: CrearUsuarioDto) {
+    return this.adminService.crearUsuario(dto);
+  }
+
+  // Actualizar usuario existente (estado activo/inactivo, rol, contraseña).
+  @Roles('administrador')
+  @Patch('usuarios/:id')
+  actualizarUsuario(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ActualizarUsuarioDto,
+  ) {
+    return this.adminService.actualizarUsuario(id, dto);
   }
 
   // Lista de cascos pendientes con datos de venta, producto y sucursal.

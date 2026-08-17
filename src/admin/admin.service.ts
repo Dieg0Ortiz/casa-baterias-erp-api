@@ -1,7 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
 import { SupabaseService } from '../supabase/supabase.service';
-import { ResolverCascoDto, VentasReporteDto } from './admin.dto';
+import {
+  ActualizarUsuarioDto,
+  CrearUsuarioDto,
+  ResolverCascoDto,
+  VentasReporteDto,
+} from './admin.dto';
 
 const TZ_MEXICO = 'America/Mexico_City';
 
@@ -263,29 +268,166 @@ export class AdminService {
     };
   }
 
-  // Empleados para el filtro del reporte de ventas. RLS permite al admin
-  // listar a todos los usuarios.
-  async listarUsuarios() {
+  async listarSucursales() {
     const { data, error } = await this.client
-      .from('usuarios')
-      .select('id, nombre_completo, rol, sucursal_id, activo')
-      .order('nombre_completo');
+      .from('sucursales')
+      .select('id, nombre, es_matriz, activo')
+      .order('nombre');
     this.throwIfError(error);
+    return data ?? [];
+  }
+
+  // Empleados/Usuarios del sistema. RLS permite al admin listar a todos los usuarios.
+  async listarUsuarios() {
+    const [resUsuarios, resSucursales] = await Promise.all([
+      this.client
+        .from('usuarios')
+        .select('id, nombre_completo, rol, sucursal_id, activo, created_at')
+        .order('nombre_completo'),
+      this.client.from('sucursales').select('id, nombre'),
+    ]);
+    this.throwIfError(resUsuarios.error);
+
+    const nombreSucursal = new Map(
+      ((resSucursales.data ?? []) as Array<{ id: string; nombre: string }>).map(
+        (s) => [s.id, s.nombre],
+      ),
+    );
+
+    // Intentar obtener los correos desde Supabase Auth Admin
+    const emailPorId = new Map<string, string>();
+    try {
+      const authAdmin = this.supabase.getServiceClient().auth.admin;
+      const { data: authUsers } = await authAdmin.listUsers({ perPage: 1000 });
+      if (authUsers?.users) {
+        for (const u of authUsers.users) {
+          if (u.email) emailPorId.set(u.id, u.email);
+        }
+      }
+    } catch {
+      // Si falla la lectura de auth admin, continuar con los datos del perfil
+    }
+
     return (
-      (data ?? []) as Array<{
+      (resUsuarios.data ?? []) as Array<{
         id: string;
         nombre_completo: string;
         rol: string;
         sucursal_id: string | null;
         activo: boolean;
+        created_at?: string;
       }>
     ).map((u) => ({
       id: u.id,
+      email: emailPorId.get(u.id) ?? null,
       nombre_completo: u.nombre_completo,
       rol: u.rol,
       sucursal_id: u.sucursal_id,
+      sucursal: u.sucursal_id ? nombreSucursal.get(u.sucursal_id) ?? null : null,
       activo: u.activo,
+      created_at: u.created_at ?? null,
     }));
+  }
+
+  async crearUsuario(dto: CrearUsuarioDto) {
+    const nombreCompleto = `${dto.nombre.trim()} ${dto.apellido.trim()}`.trim();
+    const rol = dto.rol ?? 'trabajador';
+
+    let serviceClient;
+    try {
+      serviceClient = this.supabase.getServiceClient();
+    } catch {
+      throw new BadRequestException(
+        'El servidor no tiene configurada la clave de administración (SUPABASE_SERVICE_ROLE_KEY).',
+      );
+    }
+
+    // 1. Crear usuario en Supabase Auth
+    const { data: authData, error: authError } =
+      await serviceClient.auth.admin.createUser({
+        email: dto.email.trim().toLowerCase(),
+        password: dto.password,
+        email_confirm: true,
+        user_metadata: {
+          nombre_completo: nombreCompleto,
+          rol,
+        },
+      });
+
+    if (authError || !authData.user) {
+      const msg = authError?.message ?? 'Error al crear usuario en autenticación';
+      throw new BadRequestException(
+        msg.includes('already registered') || msg.includes('already exists')
+          ? 'Ya existe un usuario registrado con este correo electrónico.'
+          : msg,
+      );
+    }
+
+    const userId = authData.user.id;
+
+    // 2. Insertar / Actualizar fila en la tabla pública `usuarios`
+    const { error: perfilError } = await serviceClient
+      .from('usuarios')
+      .upsert({
+        id: userId,
+        nombre_completo: nombreCompleto,
+        rol,
+        sucursal_id: dto.sucursal_id || null,
+        activo: true,
+      });
+
+    if (perfilError) {
+      // Revertir usuario de auth si falló la creación del perfil
+      await serviceClient.auth.admin.deleteUser(userId).catch(() => {});
+      throw new BadRequestException(
+        `Error al registrar perfil de usuario: ${perfilError.message}`,
+      );
+    }
+
+    return {
+      id: userId,
+      email: dto.email.trim().toLowerCase(),
+      nombre_completo: nombreCompleto,
+      rol,
+      sucursal_id: dto.sucursal_id || null,
+      activo: true,
+    };
+  }
+
+  async actualizarUsuario(id: string, dto: ActualizarUsuarioDto) {
+    const serviceClient = this.supabase.getServiceClient();
+
+    const updates: Record<string, any> = {};
+    if (dto.nombre !== undefined || dto.apellido !== undefined) {
+      const nombreCompleto = `${dto.nombre?.trim() ?? ''} ${dto.apellido?.trim() ?? ''}`.trim();
+      if (nombreCompleto) updates.nombre_completo = nombreCompleto;
+    }
+    if (dto.rol !== undefined) updates.rol = dto.rol;
+    if (dto.sucursal_id !== undefined) updates.sucursal_id = dto.sucursal_id;
+    if (dto.activo !== undefined) updates.activo = dto.activo;
+
+    if (Object.keys(updates).length > 0) {
+      const { error } = await serviceClient
+        .from('usuarios')
+        .update(updates)
+        .eq('id', id);
+      this.throwIfError(error);
+    }
+
+    // Actualizar contraseña si se envió
+    if (dto.password) {
+      const { error: pwdError } =
+        await serviceClient.auth.admin.updateUserById(id, {
+          password: dto.password,
+        });
+      if (pwdError) {
+        throw new BadRequestException(
+          `Error al actualizar contraseña: ${pwdError.message}`,
+        );
+      }
+    }
+
+    return { success: true };
   }
 
   // Reporte de ventas filtrable (Fase 8): por sucursal, rango de fechas,
