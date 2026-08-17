@@ -106,7 +106,7 @@ export class CatalogService {
     const { data, error } = await this.client
       .from('productos')
       .select(
-        'id, modelo, descripcion, precio, precio_2, precio_3, requiere_casco, codigo_barras, codigo_barras_origen, activo, marcas(nombre), inventario(cantidad, cascos_disponibles, sucursal_id)',
+        'id, modelo, descripcion, precio, precio_2, precio_3, comision_casco, requiere_casco, codigo_barras, codigo_barras_origen, activo, marcas(nombre), inventario(cantidad, cascos_disponibles, sucursal_id)',
       )
       .order('modelo');
     this.throwIfError(error);
@@ -125,6 +125,7 @@ export class CatalogService {
       p_cantidad_inicial: dto.cantidad_inicial ?? 0,
       p_precio_2: dto.precio_2 ?? null,
       p_precio_3: dto.precio_3 ?? null,
+      p_comision_casco: dto.comision_casco ?? null,
     });
     if (error) {
       throw new BadRequestException(this.mensajeRpc(error));
@@ -143,22 +144,24 @@ export class CatalogService {
       let precio1 = dto.precio;
       let precio2 = dto.precio_2;
       let precio3 = dto.precio_3;
+      let comisionCasco = dto.comision_casco;
 
       if (precio1 === undefined) {
         const { data: prodActual } = await this.client
           .from('productos')
-          .select('precio, precio_2, precio_3')
+          .select('precio, precio_2, precio_3, comision_casco')
           .eq('id', id)
           .single();
         if (prodActual) {
           precio1 = prodActual.precio;
           if (precio2 === undefined) precio2 = prodActual.precio_2;
           if (precio3 === undefined) precio3 = prodActual.precio_3;
+          if (comisionCasco === undefined) comisionCasco = prodActual.comision_casco;
         }
       }
 
       if (precio1 !== undefined) {
-        await this.actualizarPrecio(id, precio1, precio2, precio3);
+        await this.actualizarPrecio(id, precio1, precio2, precio3, comisionCasco);
       }
     }
 
@@ -188,12 +191,14 @@ export class CatalogService {
     precio: number,
     precio2?: number,
     precio3?: number,
+    comisionCasco?: number,
   ) {
     const { data, error } = await this.rpc('actualizar_precio', {
       p_producto_id: id,
       p_precio: precio,
       p_precio_2: precio2 ?? null,
       p_precio_3: precio3 ?? null,
+      p_comision_casco: comisionCasco ?? null,
     });
     if (error) {
       throw new BadRequestException(this.mensajeRpc(error));

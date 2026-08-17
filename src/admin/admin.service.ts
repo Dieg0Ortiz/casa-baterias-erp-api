@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
 import { SupabaseService } from '../supabase/supabase.service';
-import { VentasReporteDto } from './admin.dto';
+import { ResolverCascoDto, VentasReporteDto } from './admin.dto';
 
 const TZ_MEXICO = 'America/Mexico_City';
 
@@ -393,5 +393,126 @@ export class AdminService {
       ventas: detalle,
       totales: { ventas: ventas.length, monto, unidades },
     };
+  }
+
+  // ------------------------------------------------------------------
+  // Cascos Pendientes (sistema de comisión por depósito de baterías)
+  // ------------------------------------------------------------------
+
+  async listarCascosPendientes() {
+    const { data, error } = await this.client
+      .from('cascos_pendientes')
+      .select('*')
+      .order('created_at', { ascending: false });
+    this.throwIfError(error);
+
+    const cascos = (data ?? []) as Array<{
+      id: string;
+      venta_id: string;
+      venta_item_id: string;
+      producto_id: string;
+      sucursal_id: string;
+      comision_cobrada: number;
+      fecha_limite: string;
+      estado: string;
+      monto_devuelto: number;
+      casco_producto_id: string | null;
+      nombre_cliente: string | null;
+      telefono_cliente: string | null;
+      notas: string | null;
+      resuelto_por: string | null;
+      resuelto_en: string | null;
+      created_at: string;
+    }>;
+
+    if (cascos.length === 0) return [];
+
+    // Obtener datos relacionados
+    const ventaIds = [...new Set(cascos.map((c) => c.venta_id))];
+    const productoIds = [...new Set(cascos.map((c) => c.producto_id))];
+    const sucursalIds = [...new Set(cascos.map((c) => c.sucursal_id))];
+
+    const [resVentas, resProductos, resSucursales, resUsuarios] =
+      await Promise.all([
+        this.client
+          .from('ventas')
+          .select('id, folio')
+          .in('id', ventaIds),
+        this.client
+          .from('productos')
+          .select('id, modelo, comision_casco')
+          .in('id', productoIds),
+        this.client
+          .from('sucursales')
+          .select('id, nombre')
+          .in('id', sucursalIds),
+        this.client.from('usuarios').select('id, nombre_completo'),
+      ]);
+
+    const folioVenta = new Map(
+      ((resVentas.data ?? []) as Array<{ id: string; folio: string }>).map(
+        (v) => [v.id, v.folio],
+      ),
+    );
+    const nombreProducto = new Map(
+      (
+        (resProductos.data ?? []) as Array<{
+          id: string;
+          modelo: string;
+          comision_casco: number | null;
+        }>
+      ).map((p) => [p.id, p.modelo]),
+    );
+    const nombreSucursal = new Map(
+      ((resSucursales.data ?? []) as Array<{ id: string; nombre: string }>).map(
+        (s) => [s.id, s.nombre],
+      ),
+    );
+    const nombreUsuario = new Map(
+      (
+        (resUsuarios.data ?? []) as Array<{
+          id: string;
+          nombre_completo: string;
+        }>
+      ).map((u) => [u.id, u.nombre_completo]),
+    );
+
+    return cascos.map((c) => ({
+      id: c.id,
+      folio: folioVenta.get(c.venta_id) ?? null,
+      producto: nombreProducto.get(c.producto_id) ?? null,
+      sucursal: nombreSucursal.get(c.sucursal_id) ?? null,
+      comision_cobrada: Number(c.comision_cobrada),
+      fecha_limite: c.fecha_limite,
+      estado: c.estado,
+      monto_devuelto: Number(c.monto_devuelto),
+      nombre_cliente: c.nombre_cliente,
+      telefono_cliente: c.telefono_cliente,
+      notas: c.notas,
+      resuelto_por: c.resuelto_por
+        ? nombreUsuario.get(c.resuelto_por) ?? null
+        : null,
+      resuelto_en: c.resuelto_en,
+      created_at: c.created_at,
+    }));
+  }
+
+  async resolverCasco(cascoId: string, dto: ResolverCascoDto) {
+    const { data, error } = (await this.client.rpc(
+      'resolver_casco_pendiente',
+      {
+        p_casco_id: cascoId,
+        p_monto_devuelto: dto.monto_devuelto,
+        p_casco_producto_id: dto.casco_producto_id ?? null,
+        p_notas: dto.notas ?? null,
+      },
+    )) as { data: unknown; error: PostgrestError | null };
+    if (error) {
+      const detalle = (error.details ?? '').trim();
+      throw new BadRequestException(
+        detalle.length > 0 ? detalle : error.message,
+      );
+    }
+    return data;
   }
 }

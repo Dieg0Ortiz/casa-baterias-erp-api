@@ -1,6 +1,6 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
-import { VentasReporteDto } from './admin.dto';
+import { ResolverCascoDto, VentasReporteDto } from './admin.dto';
 import { AdminService } from './admin.service';
 
 @Controller('admin')
@@ -28,5 +28,22 @@ export class AdminController {
   @Get('usuarios')
   usuarios() {
     return this.adminService.listarUsuarios();
+  }
+
+  // Lista de cascos pendientes con datos de venta, producto y sucursal.
+  @Roles('administrador')
+  @Get('cascos-pendientes')
+  cascosPendientes() {
+    return this.adminService.listarCascosPendientes();
+  }
+
+  // Resolver un casco pendiente: registrar devolución y cerrar caso.
+  @Roles('administrador')
+  @Post('cascos-pendientes/:id/resolver')
+  resolverCasco(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ResolverCascoDto,
+  ) {
+    return this.adminService.resolverCasco(id, dto);
   }
 }

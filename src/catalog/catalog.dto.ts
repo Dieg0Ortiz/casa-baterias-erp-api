@@ -64,6 +64,11 @@ export class CrearProductoDto {
   requiere_casco?: boolean;
 
   @IsOptional()
+  @IsNumber({}, { message: 'Comisión de casco inválida' })
+  @Min(0, { message: 'La comisión no puede ser negativa' })
+  comision_casco?: number;
+
+  @IsOptional()
   @IsString()
   codigo_barras_fabrica?: string;
 
@@ -108,6 +113,11 @@ export class ActualizarProductoDto {
   @IsOptional()
   @IsBoolean()
   requiere_casco?: boolean;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Comisión de casco inválida' })
+  @Min(0, { message: 'La comisión no puede ser negativa' })
+  comision_casco?: number;
 }
 
 export class ActualizarPrecioDto {
@@ -124,4 +134,9 @@ export class ActualizarPrecioDto {
   @IsNumber({}, { message: 'Precio 3 inválido' })
   @Min(0, { message: 'El precio 3 no puede ser negativo' })
   precio_3?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Comisión de casco inválida' })
+  @Min(0, { message: 'La comisión no puede ser negativa' })
+  comision_casco?: number;
 }

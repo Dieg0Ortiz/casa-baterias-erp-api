@@ -21,6 +21,7 @@ interface FilaInventario {
     precio: number;
     precio_2: number | null;
     precio_3: number | null;
+    comision_casco: number | null;
     requiere_casco: boolean;
     marcas: { nombre: string } | null;
   } | null;
@@ -74,7 +75,7 @@ export class InventoryService {
     let query = this.client
       .from('inventario')
       .select(
-        'sucursal_id, cantidad, cascos_disponibles, productos(id, modelo, codigo_barras, precio, precio_2, precio_3, requiere_casco, marcas(nombre))',
+        'sucursal_id, cantidad, cascos_disponibles, productos(id, modelo, codigo_barras, precio, precio_2, precio_3, comision_casco, requiere_casco, marcas(nombre))',
       );
     if (sucursalId) {
       query = query.eq('sucursal_id', sucursalId);
@@ -95,6 +96,7 @@ export class InventoryService {
       precio: fila.productos?.precio ?? 0,
       precio_2: fila.productos?.precio_2 ?? null,
       precio_3: fila.productos?.precio_3 ?? null,
+      comision_casco: fila.productos?.comision_casco ?? null,
       requiere_casco: fila.productos?.requiere_casco ?? false,
       cantidad: fila.cantidad,
       cascos_disponibles: fila.cascos_disponibles,
