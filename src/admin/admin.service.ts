@@ -27,6 +27,8 @@ interface FilaItemVenta {
   cantidad: number;
   precio_unitario: number;
   tipo_precio?: string | null;
+  con_casco?: boolean | null;
+  comision_casco?: number | null;
   productos: { modelo: string } | null;
 }
 
@@ -334,7 +336,7 @@ export class AdminService {
       this.client
         .from('venta_items')
         .select(
-          'venta_id, cantidad, precio_unitario, tipo_precio, productos(modelo)',
+          'venta_id, cantidad, precio_unitario, tipo_precio, con_casco, comision_casco, productos(modelo)',
         )
         .in('venta_id', ventaIds),
       this.client.from('sucursales').select('id, nombre'),
@@ -385,6 +387,8 @@ export class AdminService {
           cantidad: i.cantidad,
           precio_unitario: Number(i.precio_unitario),
           tipo_precio: i.tipo_precio ?? 'default',
+          con_casco: i.con_casco ?? null,
+          comision_casco: Number(i.comision_casco ?? 0),
         })),
       };
     });
