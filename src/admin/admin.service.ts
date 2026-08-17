@@ -26,6 +26,7 @@ interface FilaItemVenta {
   venta_id: string;
   cantidad: number;
   precio_unitario: number;
+  tipo_precio?: string | null;
   productos: { modelo: string } | null;
 }
 
@@ -332,7 +333,9 @@ export class AdminService {
     const [resItems, resSucursales, resUsuarios] = await Promise.all([
       this.client
         .from('venta_items')
-        .select('venta_id, cantidad, precio_unitario, productos(modelo)')
+        .select(
+          'venta_id, cantidad, precio_unitario, tipo_precio, productos(modelo)',
+        )
         .in('venta_id', ventaIds),
       this.client.from('sucursales').select('id, nombre'),
       this.client.from('usuarios').select('id, nombre_completo'),
@@ -381,6 +384,7 @@ export class AdminService {
           producto: i.productos?.modelo ?? null,
           cantidad: i.cantidad,
           precio_unitario: Number(i.precio_unitario),
+          tipo_precio: i.tipo_precio ?? 'default',
         })),
       };
     });

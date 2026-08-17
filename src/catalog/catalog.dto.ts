@@ -50,6 +50,16 @@ export class CrearProductoDto {
   precio!: number;
 
   @IsOptional()
+  @IsNumber({}, { message: 'Precio 2 inválido' })
+  @Min(0, { message: 'El precio 2 no puede ser negativo' })
+  precio_2?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Precio 3 inválido' })
+  @Min(0, { message: 'El precio 3 no puede ser negativo' })
+  precio_3?: number;
+
+  @IsOptional()
   @IsBoolean()
   requiere_casco?: boolean;
 
@@ -86,6 +96,16 @@ export class ActualizarProductoDto {
   precio?: number;
 
   @IsOptional()
+  @IsNumber({}, { message: 'Precio 2 inválido' })
+  @Min(0, { message: 'El precio 2 no puede ser negativo' })
+  precio_2?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Precio 3 inválido' })
+  @Min(0, { message: 'El precio 3 no puede ser negativo' })
+  precio_3?: number;
+
+  @IsOptional()
   @IsBoolean()
   requiere_casco?: boolean;
 }
@@ -94,4 +114,14 @@ export class ActualizarPrecioDto {
   @IsNumber({}, { message: 'Precio inválido' })
   @Min(0, { message: 'El precio no puede ser negativo' })
   precio!: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Precio 2 inválido' })
+  @Min(0, { message: 'El precio 2 no puede ser negativo' })
+  precio_2?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Precio 3 inválido' })
+  @Min(0, { message: 'El precio 3 no puede ser negativo' })
+  precio_3?: number;
 }

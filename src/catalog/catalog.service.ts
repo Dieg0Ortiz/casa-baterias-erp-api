@@ -106,7 +106,7 @@ export class CatalogService {
     const { data, error } = await this.client
       .from('productos')
       .select(
-        'id, modelo, descripcion, precio, requiere_casco, codigo_barras, codigo_barras_origen, activo, marcas(nombre), inventario(cantidad, cascos_disponibles, sucursal_id)',
+        'id, modelo, descripcion, precio, precio_2, precio_3, requiere_casco, codigo_barras, codigo_barras_origen, activo, marcas(nombre), inventario(cantidad, cascos_disponibles, sucursal_id)',
       )
       .order('modelo');
     this.throwIfError(error);
@@ -123,6 +123,8 @@ export class CatalogService {
       p_codigo_barras_fabrica: dto.codigo_barras_fabrica ?? '',
       p_sucursal_id: dto.sucursal_id ?? null,
       p_cantidad_inicial: dto.cantidad_inicial ?? 0,
+      p_precio_2: dto.precio_2 ?? null,
+      p_precio_3: dto.precio_3 ?? null,
     });
     if (error) {
       throw new BadRequestException(this.mensajeRpc(error));
@@ -131,16 +133,41 @@ export class CatalogService {
   }
 
   async actualizarProducto(id: string, dto: ActualizarProductoDto) {
-    // Si viene cambio de precio, ejecutamos la RPC de precio
-    if (dto.precio !== undefined) {
-      await this.actualizarPrecio(id, dto.precio);
+    // Si viene cambio de precios, ejecutamos la actualización
+    if (
+      dto.precio !== undefined ||
+      dto.precio_2 !== undefined ||
+      dto.precio_3 !== undefined
+    ) {
+      // Obtenemos el producto actual si falta algún precio
+      let precio1 = dto.precio;
+      let precio2 = dto.precio_2;
+      let precio3 = dto.precio_3;
+
+      if (precio1 === undefined) {
+        const { data: prodActual } = await this.client
+          .from('productos')
+          .select('precio, precio_2, precio_3')
+          .eq('id', id)
+          .single();
+        if (prodActual) {
+          precio1 = prodActual.precio;
+          if (precio2 === undefined) precio2 = prodActual.precio_2;
+          if (precio3 === undefined) precio3 = prodActual.precio_3;
+        }
+      }
+
+      if (precio1 !== undefined) {
+        await this.actualizarPrecio(id, precio1, precio2, precio3);
+      }
     }
 
     const cambios: Record<string, unknown> = {};
     if (dto.modelo !== undefined) cambios.modelo = dto.modelo;
     if (dto.descripcion !== undefined) cambios.descripcion = dto.descripcion;
     if (dto.marca_id !== undefined) cambios.marca_id = dto.marca_id;
-    if (dto.requiere_casco !== undefined) cambios.requiere_casco = dto.requiere_casco;
+    if (dto.requiere_casco !== undefined)
+      cambios.requiere_casco = dto.requiere_casco;
 
     if (Object.keys(cambios).length > 0) {
       const { data, error } = await this.client
@@ -156,10 +183,17 @@ export class CatalogService {
     return { id, actualizado: true };
   }
 
-  async actualizarPrecio(id: string, precio: number) {
+  async actualizarPrecio(
+    id: string,
+    precio: number,
+    precio2?: number,
+    precio3?: number,
+  ) {
     const { data, error } = await this.rpc('actualizar_precio', {
       p_producto_id: id,
       p_precio: precio,
+      p_precio_2: precio2 ?? null,
+      p_precio_3: precio3 ?? null,
     });
     if (error) {
       throw new BadRequestException(this.mensajeRpc(error));

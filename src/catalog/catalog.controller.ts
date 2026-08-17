@@ -23,7 +23,7 @@ export class CatalogController {
   constructor(private readonly catalogService: CatalogService) {}
 
   // ------------------------------------------------------------------
-  // Marcas
+  // Sucursales
   // ------------------------------------------------------------------
 
   @Get('sucursales')
@@ -86,7 +86,12 @@ export class CatalogController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ActualizarPrecioDto,
   ) {
-    return this.catalogService.actualizarPrecio(id, dto.precio);
+    return this.catalogService.actualizarPrecio(
+      id,
+      dto.precio,
+      dto.precio_2,
+      dto.precio_3,
+    );
   }
 
   @Post('productos/:id/baja')

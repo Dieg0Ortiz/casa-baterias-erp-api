@@ -41,6 +41,13 @@ export class VentaItemDto {
   @IsOptional()
   @IsBoolean()
   busqueda_manual?: boolean;
+
+  // Opción de precio seleccionada ('default' | 'precio_2' | 'precio_3')
+  @IsOptional()
+  @IsIn(['default', 'precio_2', 'precio_3'], {
+    message: 'El tipo de precio debe ser default, precio_2 o precio_3',
+  })
+  tipo_precio?: 'default' | 'precio_2' | 'precio_3';
 }
 
 export class RegistrarVentaDto {
