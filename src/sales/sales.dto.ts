@@ -16,8 +16,7 @@ import {
 
 export class VentaItemDto {
   // El artículo se identifica por producto_id o por código de barras,
-  // nunca ambos vacíos. El precio NO se acepta: siempre lo toma el
-  // servidor del catálogo vigente (Sección 3.7).
+  // nunca ambos vacíos.
   @ValidateIf((o: VentaItemDto) => !o.codigo_barras)
   @IsUUID('4', { message: 'Producto inválido' })
   producto_id?: string;
@@ -43,12 +42,18 @@ export class VentaItemDto {
   @IsBoolean()
   busqueda_manual?: boolean;
 
-  // Opción de precio seleccionada ('default' | 'precio_2' | 'precio_3')
+  // Opción de precio seleccionada ('default' | 'precio_2' | 'precio_3' | 'precio_especial')
   @IsOptional()
-  @IsIn(['default', 'precio_2', 'precio_3'], {
-    message: 'El tipo de precio debe ser default, precio_2 o precio_3',
+  @IsIn(['default', 'precio_2', 'precio_3', 'precio_especial'], {
+    message: 'El tipo de precio debe ser default, precio_2, precio_3 o precio_especial',
   })
-  tipo_precio?: 'default' | 'precio_2' | 'precio_3';
+  tipo_precio?: 'default' | 'precio_2' | 'precio_3' | 'precio_especial';
+
+  // Precio unitario personalizado capturado por el trabajador (solo cuando tipo_precio === 'precio_especial')
+  @ValidateIf((o: VentaItemDto) => o.tipo_precio === 'precio_especial')
+  @IsNumber({}, { message: 'El precio unitario es requerido para precio especial' })
+  @Min(0, { message: 'El precio especial no puede ser negativo' })
+  precio_unitario?: number;
 }
 
 export class PagoParcialDto {
