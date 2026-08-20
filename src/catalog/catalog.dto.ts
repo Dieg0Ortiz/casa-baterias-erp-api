@@ -80,6 +80,11 @@ export class CrearProductoDto {
   @IsNumber()
   @Min(0)
   cantidad_inicial?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Precio de compra inválido' })
+  @Min(0, { message: 'El precio de compra no puede ser negativo' })
+  precio_compra?: number;
 }
 
 export class ActualizarProductoDto {
@@ -118,6 +123,11 @@ export class ActualizarProductoDto {
   @IsNumber({}, { message: 'Comisión de casco inválida' })
   @Min(0, { message: 'La comisión no puede ser negativa' })
   comision_casco?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Precio de compra inválido' })
+  @Min(0, { message: 'El precio de compra no puede ser negativo' })
+  precio_compra?: number;
 }
 
 export class ActualizarPrecioDto {
@@ -139,4 +149,9 @@ export class ActualizarPrecioDto {
   @IsNumber({}, { message: 'Comisión de casco inválida' })
   @Min(0, { message: 'La comisión no puede ser negativa' })
   comision_casco?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Precio de compra inválido' })
+  @Min(0, { message: 'El precio de compra no puede ser negativo' })
+  precio_compra?: number;
 }
