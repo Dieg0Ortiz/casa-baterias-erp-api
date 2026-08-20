@@ -64,7 +64,7 @@ export class PurchasesService {
     const { data, error } = await this.client
       .from('compras')
       .select(
-        'id, folio, fecha:created_at, total, estado, proveedores(nombre), sucursales(nombre), usuarios(nombre_completo)'
+        'id, folio, fecha:created_at, total, estado, proveedores(nombre), sucursales(nombre), usuarios!usuario_id(nombre_completo)'
       )
       .order('created_at', { ascending: false });
     this.throwIfError(error);
@@ -75,7 +75,7 @@ export class PurchasesService {
     const { data, error } = await this.client
       .from('compras')
       .select(
-        '*, proveedores(nombre), sucursales(nombre), usuarios(nombre_completo), compra_items(id, tipo_item, cantidad, precio_unitario, productos(modelo, descripcion))'
+        '*, proveedores(nombre), sucursales(nombre), usuarios!usuario_id(nombre_completo), compra_items(id, tipo_item, cantidad, precio_unitario, productos(modelo, descripcion))'
       )
       .eq('id', id)
       .single();
