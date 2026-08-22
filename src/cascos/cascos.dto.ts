@@ -36,13 +36,11 @@ export class RegistrarIntercambioDto {
   @IsOptional()
   monto_cobrado?: number;
 
-  @IsOptional()
-  @IsString()
-  cliente_nombre?: string;
+  @IsString({ message: 'El nombre del cliente es obligatorio' })
+  cliente_nombre!: string;
 
-  @IsOptional()
-  @IsString()
-  cliente_telefono?: string;
+  @IsString({ message: 'El teléfono del cliente es obligatorio' })
+  cliente_telefono!: string;
 
   @IsOptional()
   @IsString()
