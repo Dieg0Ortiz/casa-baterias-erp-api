@@ -174,6 +174,8 @@ export class CatalogService {
     if (dto.marca_id !== undefined) cambios.marca_id = dto.marca_id;
     if (dto.requiere_casco !== undefined)
       cambios.requiere_casco = dto.requiere_casco;
+    if (dto.codigo_barras !== undefined && dto.codigo_barras.trim().length > 0)
+      cambios.codigo_barras = dto.codigo_barras.trim();
 
     if (Object.keys(cambios).length > 0) {
       const { data, error } = await this.client

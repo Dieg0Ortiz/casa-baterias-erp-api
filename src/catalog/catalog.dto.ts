@@ -128,6 +128,10 @@ export class ActualizarProductoDto {
   @IsNumber({}, { message: 'Precio de compra inválido' })
   @Min(0, { message: 'El precio de compra no puede ser negativo' })
   precio_compra?: number;
+
+  @IsOptional()
+  @IsString({ message: 'El código de barras debe ser texto' })
+  codigo_barras?: string;
 }
 
 export class ActualizarPrecioDto {
