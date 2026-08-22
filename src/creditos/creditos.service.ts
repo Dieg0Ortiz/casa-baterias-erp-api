@@ -35,7 +35,7 @@ export class CreditosService {
               cantidad,
               precio_unitario,
               con_casco,
-              producto:productos(id, modelo, marca, linea)
+              producto:productos(id, modelo, marcas(nombre))
             )
           )
         )
@@ -164,13 +164,13 @@ export class CreditosService {
           folio,
           created_at,
           total,
-          usuario:usuarios(id, nombre, email),
+          usuario:usuarios(id, nombre_completo, email),
           venta_items(
             id,
             cantidad,
             precio_unitario,
             con_casco,
-            producto:productos(id, modelo, marca, linea, requiere_casco)
+            producto:productos(id, modelo, marcas(nombre), requiere_casco)
           )
         )
       `)
@@ -189,7 +189,7 @@ export class CreditosService {
         referencia,
         notas,
         created_at,
-        usuario:usuarios(id, nombre),
+        usuario:usuarios(id, nombre_completo),
         sucursal:sucursales(id, nombre)
       `)
       .eq('empresa_id', empresaId)
@@ -197,15 +197,52 @@ export class CreditosService {
 
     if (aErr) throw new BadRequestException(aErr.message);
 
-    const saldoDeudor = (ventasCredito ?? [])
+    const mappedVentas = (ventasCredito ?? []).map((v: any) => ({
+      ...v,
+      venta: v.venta
+        ? {
+            ...v.venta,
+            usuario: v.venta.usuario
+              ? {
+                  id: v.venta.usuario.id,
+                  nombre: v.venta.usuario.nombre_completo,
+                  email: v.venta.usuario.email,
+                }
+              : null,
+            venta_items: (v.venta.venta_items ?? []).map((vi: any) => ({
+              ...vi,
+              producto: vi.producto
+                ? {
+                    id: vi.producto.id,
+                    modelo: vi.producto.modelo,
+                    marca: vi.producto.marcas?.nombre || '',
+                    requiere_casco: vi.producto.requiere_casco,
+                  }
+                : null,
+            })),
+          }
+        : null,
+    }));
+
+    const mappedAbonos = (abonos ?? []).map((a: any) => ({
+      ...a,
+      usuario: a.usuario
+        ? {
+            id: a.usuario.id,
+            nombre: a.usuario.nombre_completo,
+          }
+        : null,
+    }));
+
+    const saldoDeudor = (mappedVentas ?? [])
       .filter((v: any) => v.estado !== 'pagado')
       .reduce((sum: number, v: any) => sum + Number(v.saldo_pendiente || 0), 0);
 
     return {
       empresa,
       saldo_deudor: Math.round(saldoDeudor * 100) / 100,
-      ventas: ventasCredito ?? [],
-      abonos: abonos ?? [],
+      ventas: mappedVentas,
+      abonos: mappedAbonos,
     };
   }
 
@@ -230,13 +267,13 @@ export class CreditosService {
           folio,
           created_at,
           total,
-          usuario:usuarios(id, nombre),
+          usuario:usuarios(id, nombre_completo),
           venta_items(
             id,
             cantidad,
             precio_unitario,
             con_casco,
-            producto:productos(id, modelo, marca, linea)
+            producto:productos(id, modelo, marcas(nombre))
           )
         )
       `)
@@ -258,6 +295,27 @@ export class CreditosService {
       return {
         ...item,
         es_vencida: vencida,
+        venta: item.venta
+          ? {
+              ...item.venta,
+              usuario: item.venta.usuario
+                ? {
+                    id: item.venta.usuario.id,
+                    nombre: item.venta.usuario.nombre_completo,
+                  }
+                : null,
+              venta_items: (item.venta.venta_items ?? []).map((vi: any) => ({
+                ...vi,
+                producto: vi.producto
+                  ? {
+                      id: vi.producto.id,
+                      modelo: vi.producto.modelo,
+                      marca: vi.producto.marcas?.nombre || '',
+                    }
+                  : null,
+              })),
+            }
+          : null,
       };
     });
 
