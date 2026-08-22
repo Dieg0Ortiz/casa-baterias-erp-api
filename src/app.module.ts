@@ -16,6 +16,7 @@ import { SalesModule } from './sales/sales.module';
 import { CashModule } from './cash/cash.module';
 import { AdminModule } from './admin/admin.module';
 import { PurchasesModule } from './purchases/purchases.module';
+import { CascosModule } from './cascos/cascos.module';
 import { ReportsModule } from './reports/reports.module';
 
 @Module({
@@ -44,6 +45,7 @@ import { ReportsModule } from './reports/reports.module';
     CashModule,
     AdminModule,
     PurchasesModule,
+    CascosModule,
     ReportsModule,
   ],
   providers: [

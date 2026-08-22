@@ -48,6 +48,28 @@ export class ReportsService {
       totalUtilidad += (venta - costo);
     }
 
+    // Sumar ingresos y utilidades por intercambios de cascos
+    let queryIntercambios = this.client
+      .from('intercambios_cascos')
+      .select('id, monto_cobrado, estado, created_at')
+      .eq('estado', 'completado');
+
+    if (fechaInicio) {
+      queryIntercambios = queryIntercambios.gte('created_at', fechaInicio);
+    }
+    if (fechaFin) {
+      queryIntercambios = queryIntercambios.lte('created_at', fechaFin);
+    }
+
+    const { data: intercambios, error: errorIntercambios } = await queryIntercambios;
+    if (!errorIntercambios && intercambios) {
+      for (const inc of intercambios) {
+        const monto = Number(inc.monto_cobrado) || 0;
+        totalVentas += monto;
+        totalUtilidad += monto; // 100% utilidad neta de servicio
+      }
+    }
+
     return { totalVentas, totalCosto, totalUtilidad, items };
   }
 }
