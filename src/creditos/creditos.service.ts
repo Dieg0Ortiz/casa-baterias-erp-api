@@ -164,7 +164,7 @@ export class CreditosService {
           folio,
           created_at,
           total,
-          usuario:usuarios(id, nombre_completo, email),
+          usuario:usuarios!usuario_id(id, nombre_completo, email),
           venta_items(
             id,
             cantidad,
@@ -189,7 +189,7 @@ export class CreditosService {
         referencia,
         notas,
         created_at,
-        usuario:usuarios(id, nombre_completo),
+        usuario:usuarios!usuario_id(id, nombre_completo),
         sucursal:sucursales(id, nombre)
       `)
       .eq('empresa_id', empresaId)
@@ -267,7 +267,7 @@ export class CreditosService {
           folio,
           created_at,
           total,
-          usuario:usuarios(id, nombre_completo),
+          usuario:usuarios!usuario_id(id, nombre_completo),
           venta_items(
             id,
             cantidad,
