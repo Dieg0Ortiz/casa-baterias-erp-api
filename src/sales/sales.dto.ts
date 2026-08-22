@@ -89,10 +89,10 @@ export class RegistrarVentaDto {
   // Método de pago: efectivo, tarjeta_debito, tarjeta_credito, transferencia o mixto
   @IsOptional()
   @IsIn(
-    ['efectivo', 'tarjeta', 'tarjeta_debito', 'tarjeta_credito', 'transferencia', 'mixto'],
+    ['efectivo', 'tarjeta', 'tarjeta_debito', 'tarjeta_credito', 'transferencia', 'mixto', 'credito'],
     {
       message:
-        'El método de pago debe ser efectivo, tarjeta_debito, tarjeta_credito, transferencia o mixto',
+        'El método de pago debe ser efectivo, tarjeta_debito, tarjeta_credito, transferencia, mixto o credito',
     },
   )
   metodo_pago?:
@@ -101,7 +101,24 @@ export class RegistrarVentaDto {
     | 'tarjeta_debito'
     | 'tarjeta_credito'
     | 'transferencia'
-    | 'mixto';
+    | 'mixto'
+    | 'credito';
+
+  @IsOptional()
+  @IsUUID('4', { message: 'Empresa de crédito inválida' })
+  empresa_credito_id?: string;
+
+  @IsOptional()
+  @IsString()
+  recibido_por?: string;
+
+  @IsOptional()
+  @IsString()
+  vehiculo_placas?: string;
+
+  @IsOptional()
+  @IsString()
+  folio_vale?: string;
 
   @IsOptional()
   @IsArray({ message: 'El desglose de pagos debe ser una lista' })
