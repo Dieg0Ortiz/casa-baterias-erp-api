@@ -164,7 +164,7 @@ export class CreditosService {
           folio,
           created_at,
           total,
-          usuario:usuarios!usuario_id(id, nombre_completo, email),
+          usuario:usuarios!usuario_id(id, nombre_completo),
           venta_items(
             id,
             cantidad,
@@ -206,7 +206,6 @@ export class CreditosService {
               ? {
                   id: v.venta.usuario.id,
                   nombre: v.venta.usuario.nombre_completo,
-                  email: v.venta.usuario.email,
                 }
               : null,
             venta_items: (v.venta.venta_items ?? []).map((vi: any) => ({
