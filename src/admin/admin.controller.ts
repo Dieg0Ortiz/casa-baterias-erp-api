@@ -10,7 +10,9 @@ import {
 } from '@nestjs/common';
 import { Roles } from '../common/decorators/roles.decorator';
 import {
+  ActualizarSucursalDto,
   ActualizarUsuarioDto,
+  CrearSucursalDto,
   CrearUsuarioDto,
   ResolverCascoDto,
   VentasReporteDto,
@@ -29,11 +31,28 @@ export class AdminController {
     return this.adminService.dashboard();
   }
 
-  // Sucursales activas para asignación de trabajadores.
+  // Sucursales activas para asignación de trabajadores y administración.
   @Roles('administrador')
   @Get('sucursales')
   sucursales() {
     return this.adminService.listarSucursales();
+  }
+
+  // Crear nueva sucursal. Solo administrador.
+  @Roles('administrador')
+  @Post('sucursales')
+  crearSucursal(@Body() dto: CrearSucursalDto) {
+    return this.adminService.crearSucursal(dto);
+  }
+
+  // Actualizar sucursal existente. Solo administrador.
+  @Roles('administrador')
+  @Patch('sucursales/:id')
+  actualizarSucursal(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ActualizarSucursalDto,
+  ) {
+    return this.adminService.actualizarSucursal(id, dto);
   }
 
   // Reporte de ventas filtrable (Fase 8): sucursal, fechas, empleado y

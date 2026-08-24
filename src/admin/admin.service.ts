@@ -2,7 +2,9 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
+  ActualizarSucursalDto,
   ActualizarUsuarioDto,
+  CrearSucursalDto,
   CrearUsuarioDto,
   ResolverCascoDto,
   VentasReporteDto,
@@ -269,12 +271,126 @@ export class AdminService {
   }
 
   async listarSucursales() {
+    const [resSucursales, resUsuarios] = await Promise.all([
+      this.client
+        .from('sucursales')
+        .select('id, nombre, es_matriz, direccion, created_at')
+        .order('nombre'),
+      this.client
+        .from('usuarios')
+        .select('sucursal_id')
+        .eq('activo', true),
+    ]);
+    this.throwIfError(resSucursales.error);
+
+    const usuarios = resUsuarios.data ?? [];
+    const countPorSucursal = new Map<string, number>();
+    for (const u of usuarios) {
+      if (u.sucursal_id) {
+        countPorSucursal.set(
+          u.sucursal_id,
+          (countPorSucursal.get(u.sucursal_id) ?? 0) + 1,
+        );
+      }
+    }
+
+    const sucursales = (resSucursales.data ?? []) as Array<{
+      id: string;
+      nombre: string;
+      es_matriz: boolean;
+      direccion: string | null;
+      created_at: string;
+    }>;
+
+    return sucursales.map((s) => ({
+      ...s,
+      empleados_count: countPorSucursal.get(s.id) ?? 0,
+    }));
+  }
+
+  async crearSucursal(dto: CrearSucursalDto) {
+    const esMatriz = dto.es_matriz ?? false;
+
+    // Si la nueva sucursal es matriz, desmarcar cualquier otra matriz
+    if (esMatriz) {
+      await this.client
+        .from('sucursales')
+        .update({ es_matriz: false })
+        .eq('es_matriz', true);
+    }
+
+    const { data: sucursal, error } = await this.client
+      .from('sucursales')
+      .insert({
+        nombre: dto.nombre.trim(),
+        es_matriz: esMatriz,
+        direccion: dto.direccion?.trim() || null,
+      })
+      .select('id, nombre, es_matriz, direccion, created_at')
+      .single();
+
+    this.throwIfError(error);
+
+    // Inicializar inventario en 0 para todos los productos en la nueva sucursal
+    try {
+      const { data: productos } = await this.client
+        .from('productos')
+        .select('id');
+
+      if (productos && productos.length > 0) {
+        const filasInventario = productos.map((p) => ({
+          producto_id: p.id,
+          sucursal_id: sucursal.id,
+          cantidad: 0,
+          cascos_disponibles: 0,
+        }));
+        await this.client
+          .from('inventario')
+          .insert(filasInventario);
+      }
+    } catch {
+      // No bloqueante
+    }
+
+    return {
+      ...sucursal,
+      empleados_count: 0,
+    };
+  }
+
+  async actualizarSucursal(id: string, dto: ActualizarSucursalDto) {
+    const cambios: Record<string, unknown> = {};
+    if (dto.nombre !== undefined) {
+      cambios.nombre = dto.nombre.trim();
+    }
+    if (dto.direccion !== undefined) {
+      cambios.direccion = dto.direccion.trim() || null;
+    }
+    if (dto.es_matriz !== undefined) {
+      cambios.es_matriz = dto.es_matriz;
+      if (dto.es_matriz) {
+        // Desmarcar matriz en las demás sucursales
+        await this.client
+          .from('sucursales')
+          .update({ es_matriz: false })
+          .neq('id', id)
+          .eq('es_matriz', true);
+      }
+    }
+
+    if (Object.keys(cambios).length === 0) {
+      return { id, actualizado: true };
+    }
+
     const { data, error } = await this.client
       .from('sucursales')
-      .select('id, nombre, es_matriz, activo')
-      .order('nombre');
+      .update(cambios)
+      .eq('id', id)
+      .select('id, nombre, es_matriz, direccion, created_at')
+      .single();
+
     this.throwIfError(error);
-    return data ?? [];
+    return data;
   }
 
   // Empleados/Usuarios del sistema. RLS permite al admin listar a todos los usuarios.

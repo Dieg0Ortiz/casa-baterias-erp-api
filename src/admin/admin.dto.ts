@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsIn,
@@ -102,4 +103,35 @@ export class ActualizarUsuarioDto {
   @IsOptional()
   @MinLength(6, { message: 'La nueva contraseña debe tener al menos 6 caracteres' })
   password?: string;
+}
+
+// DTO para crear una nueva sucursal.
+export class CrearSucursalDto {
+  @IsString({ message: 'El nombre de la sucursal es obligatorio' })
+  @IsNotEmpty({ message: 'El nombre no puede estar vacío' })
+  nombre!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  es_matriz?: boolean;
+
+  @IsOptional()
+  @IsString()
+  direccion?: string;
+}
+
+// DTO para actualizar una sucursal existente.
+export class ActualizarSucursalDto {
+  @IsOptional()
+  @IsString({ message: 'El nombre debe ser texto' })
+  @IsNotEmpty({ message: 'El nombre no puede estar vacío' })
+  nombre?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  es_matriz?: boolean;
+
+  @IsOptional()
+  @IsString()
+  direccion?: string;
 }
