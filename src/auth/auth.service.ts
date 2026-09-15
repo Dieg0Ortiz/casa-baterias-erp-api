@@ -42,7 +42,7 @@ export class AuthService {
         const { data: perfilData, error: perfilError } = await this.supabase
           .getClient()
           .from('usuarios')
-          .select('id, rol, sucursal_id, nombre_completo, activo')
+          .select('id, rol, sucursal_id, nombre_completo, activo, sucursales(nombre)')
           .eq('id', userId)
           .maybeSingle();
 
@@ -52,7 +52,15 @@ export class AuthService {
           );
         }
 
-        return perfilData;
+        // Aplanar el JOIN: extraer nombre de la sucursal al nivel raíz.
+        const sucursalObj = perfilData.sucursales as
+          | { nombre: string }
+          | null;
+        const { sucursales: _ignorar, ...resto } = perfilData;
+        return {
+          ...resto,
+          sucursal_nombre: sucursalObj?.nombre ?? null,
+        };
       },
     );
 

@@ -20,6 +20,7 @@ export interface PerfilUsuario {
   sucursal_id: string | null;
   nombre_completo: string;
   activo: boolean;
+  sucursal_nombre?: string | null;
 }
 
 export interface UsuarioAutenticado {
@@ -120,7 +121,7 @@ export class JwtAuthGuard implements CanActivate {
       const { data, error } = await this.supabase
         .getClient()
         .from('usuarios')
-        .select('id, rol, sucursal_id, nombre_completo, activo')
+        .select('id, rol, sucursal_id, nombre_completo, activo, sucursales(nombre)')
         .eq('id', userId)
         .maybeSingle();
 
@@ -129,7 +130,13 @@ export class JwtAuthGuard implements CanActivate {
           'No se pudo verificar el perfil del usuario',
         );
       }
-      return data;
+      if (!data) return null;
+      const sucursalObj = data.sucursales as { nombre: string } | null;
+      const { sucursales: _ignorar, ...resto } = data;
+      return {
+        ...resto,
+        sucursal_nombre: sucursalObj?.nombre ?? null,
+      };
     });
 
     if (!perfil || !perfil.activo) {
