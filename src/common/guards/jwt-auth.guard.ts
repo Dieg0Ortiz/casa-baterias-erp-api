@@ -131,7 +131,8 @@ export class JwtAuthGuard implements CanActivate {
         );
       }
       if (!data) return null;
-      const sucursalObj = data.sucursales as { nombre: string } | null;
+      const sucursalArray = data.sucursales as { nombre: string }[] | null;
+      const sucursalObj = sucursalArray?.[0] ?? null;
       const { sucursales: _ignorar, ...resto } = data;
       return {
         ...resto,
@@ -152,3 +153,4 @@ export class JwtAuthGuard implements CanActivate {
     return type === 'Bearer' ? token : undefined;
   }
 }
+
