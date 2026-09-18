@@ -54,7 +54,8 @@ export class InventoryController {
   }
 
   // Eliminar o vaciar existencias de un producto en una sucursal.
-  @Post('eliminar-existencia')
+  // Alias en plural: el panel llegó a llamar `/eliminar-existencias`.
+  @Post(['eliminar-existencia', 'eliminar-existencias'])
   @Roles('administrador')
   eliminarExistencia(@Body() dto: EliminarExistenciaDto) {
     return this.inventoryService.eliminarExistencia(dto);

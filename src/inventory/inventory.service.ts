@@ -188,37 +188,22 @@ export class InventoryService {
     }
   }
 
-  // Eliminar o vaciar existencias de un producto en una sucursal.
-  // Permite reducir por merma/ajuste o vaciar a 0.
+  // Eliminar o vaciar existencias vía RPC (RLS no permite UPDATE directo).
   async eliminarExistencia(dto: EliminarExistenciaDto) {
-    const { data: existencia, error: errBusq } = await this.client
-      .from('inventario')
-      .select('id, cantidad')
-      .eq('producto_id', dto.producto_id)
-      .eq('sucursal_id', dto.sucursal_id)
-      .maybeSingle();
+    const { data, error } = await this.rpc('eliminar_existencia_inventario', {
+      p_producto_id: dto.producto_id,
+      p_sucursal_id: dto.sucursal_id,
+      p_cantidad: dto.cantidad ?? null,
+    });
 
-    if (errBusq) {
-      throw new BadRequestException(errBusq.message);
+    if (error) {
+      throw new BadRequestException(this.mensajeRpc(error));
     }
 
-    if (!existencia) {
+    if (!data) {
       return { success: true, cantidad: 0 };
     }
 
-    const nuevaCantidad =
-      dto.cantidad !== undefined
-        ? Math.max(0, existencia.cantidad - dto.cantidad)
-        : 0;
-
-    const { data, error } = await this.client
-      .from('inventario')
-      .update({ cantidad: nuevaCantidad })
-      .eq('id', existencia.id)
-      .select()
-      .single();
-
-    this.throwIfError(error);
     return data;
   }
 
