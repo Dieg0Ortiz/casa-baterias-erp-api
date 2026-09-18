@@ -53,9 +53,13 @@ export class AuthService {
         }
 
         // Aplanar el JOIN: extraer nombre de la sucursal al nivel raíz.
-        const sucursalObj = perfilData.sucursales as
+        const sucursalesRelacion = perfilData.sucursales as unknown as
           | { nombre: string }
+          | { nombre: string }[]
           | null;
+        const sucursalObj = Array.isArray(sucursalesRelacion)
+          ? sucursalesRelacion[0]
+          : sucursalesRelacion;
         const { sucursales: _ignorar, ...resto } = perfilData;
         return {
           ...resto,

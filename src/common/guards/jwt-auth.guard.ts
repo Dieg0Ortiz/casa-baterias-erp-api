@@ -131,7 +131,13 @@ export class JwtAuthGuard implements CanActivate {
         );
       }
       if (!data) return null;
-      const sucursalObj = data.sucursales as { nombre: string } | null;
+      const sucursalesRelacion = data.sucursales as unknown as
+        | { nombre: string }
+        | { nombre: string }[]
+        | null;
+      const sucursalObj = Array.isArray(sucursalesRelacion)
+        ? sucursalesRelacion[0]
+        : sucursalesRelacion;
       const { sucursales: _ignorar, ...resto } = data;
       return {
         ...resto,
