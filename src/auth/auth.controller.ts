@@ -14,6 +14,11 @@ class LoginDto {
   password!: string;
 }
 
+class RefreshDto {
+  @IsString({ message: 'Refresh token inválido' })
+  refresh_token!: string;
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -22,6 +27,12 @@ export class AuthController {
   @Public()
   login(@Body() body: LoginDto) {
     return this.authService.login(body.email, body.password);
+  }
+
+  @Post('refresh')
+  @Public()
+  refresh(@Body() body: RefreshDto) {
+    return this.authService.refresh(body.refresh_token);
   }
 
   @Get('me')

@@ -331,26 +331,14 @@ export class AdminService {
 
     this.throwIfError(error);
 
-    // Inicializar inventario en 0 para todos los productos en la nueva sucursal
-    try {
-      const { data: productos } = await this.client
-        .from('productos')
-        .select('id');
-
-      if (productos && productos.length > 0) {
-        const filasInventario = productos.map((p) => ({
-          producto_id: p.id,
-          sucursal_id: sucursal.id,
-          cantidad: 0,
-          cascos_disponibles: 0,
-        }));
-        await this.client
-          .from('inventario')
-          .insert(filasInventario);
-      }
-    } catch {
-      // No bloqueante
-    }
+    // Inventario en 0 para los productos activos. Va por RPC: inventario no
+    // admite INSERT directo (RLS solo permite escribir vía security definer),
+    // así que sembrarlo con el cliente del usuario siempre se rechaza.
+    const { error: errorInventario } = (await this.client.rpc(
+      'inicializar_inventario_sucursal',
+      { p_sucursal_id: sucursal.id },
+    )) as { data: unknown; error: PostgrestError | null };
+    this.throwIfError(errorInventario);
 
     return {
       ...sucursal,
