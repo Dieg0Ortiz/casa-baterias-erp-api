@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
+  CargarExistenciasMasivoDto,
   CorregirSucursalDto,
   EliminarExistenciaDto,
   ReabastecerInventarioDto,
@@ -189,6 +190,23 @@ export class InventoryService {
   }
 
   // Eliminar o vaciar existencias vía RPC (RLS no permite UPDATE directo).
+  // Carga de existencias por código de barras en una sola llamada. Los
+  // códigos desconocidos no detienen la carga: la RPC los devuelve para
+  // revisarlos.
+  async cargarExistenciasMasivo(dto: CargarExistenciasMasivoDto) {
+    const { data, error } = await this.rpc('cargar_existencias_masivo', {
+      p_sucursal_id: dto.sucursal_id,
+      p_items: dto.items,
+      p_modo: dto.modo ?? 'sumar',
+    });
+
+    if (error) {
+      throw new BadRequestException(this.mensajeRpc(error));
+    }
+
+    return data;
+  }
+
   async eliminarExistencia(dto: EliminarExistenciaDto) {
     const { data, error } = await this.rpc('eliminar_existencia_inventario', {
       p_producto_id: dto.producto_id,

@@ -9,6 +9,7 @@ import {
 import { Roles } from '../common/decorators/roles.decorator';
 import { InventoryService } from './inventory.service';
 import {
+  CargarExistenciasMasivoDto,
   CorregirSucursalDto,
   EliminarExistenciaDto,
   ReabastecerInventarioDto,
@@ -37,6 +38,12 @@ export class InventoryController {
   @Roles('administrador')
   listarTransferencias() {
     return this.inventoryService.listarTransferencias();
+  }
+
+  @Post('carga-masiva')
+  @Roles('administrador')
+  cargaMasiva(@Body() dto: CargarExistenciasMasivoDto) {
+    return this.inventoryService.cargarExistenciasMasivo(dto);
   }
 
   @Post('reabastecer')
