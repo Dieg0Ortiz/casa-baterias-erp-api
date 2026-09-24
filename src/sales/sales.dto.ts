@@ -120,6 +120,21 @@ export class RegistrarVentaDto {
   @IsString()
   folio_vale?: string;
 
+  // La app manda estos datos con el prefijo `credito_`. Se aceptan los dos
+  // nombres: el validador rechaza las propiedades que no declara el DTO, y las
+  // versiones ya instaladas en los celulares usan el prefijo.
+  @IsOptional()
+  @IsString()
+  credito_recibido_por?: string;
+
+  @IsOptional()
+  @IsString()
+  credito_vehiculo_placas?: string;
+
+  @IsOptional()
+  @IsString()
+  credito_folio_vale?: string;
+
   @IsOptional()
   @IsArray({ message: 'El desglose de pagos debe ser una lista' })
   @ValidateNested({ each: true })

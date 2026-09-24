@@ -59,9 +59,10 @@ export class SalesService {
       p_metodo_pago: dto.metodo_pago ?? 'efectivo',
       p_desglose_pago: dto.desglose_pago ?? null,
       p_empresa_credito_id: dto.empresa_credito_id ?? null,
-      p_recibido_por: dto.recibido_por ?? null,
-      p_vehiculo_placas: dto.vehiculo_placas ?? null,
-      p_folio_vale: dto.folio_vale ?? null,
+      p_recibido_por: dto.recibido_por ?? dto.credito_recibido_por ?? null,
+      p_vehiculo_placas:
+        dto.vehiculo_placas ?? dto.credito_vehiculo_placas ?? null,
+      p_folio_vale: dto.folio_vale ?? dto.credito_folio_vale ?? null,
     });
     if (error) {
       throw new BadRequestException(this.mensajeRpc(error));
