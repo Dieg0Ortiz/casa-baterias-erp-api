@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
 import { SupabaseService } from '../supabase/supabase.service';
-import { RegistrarIntercambioDto } from './cascos.dto';
+import { AjustarCascoBodegaDto, RegistrarIntercambioDto } from './cascos.dto';
 
 @Injectable()
 export class CascosService {
@@ -90,6 +90,44 @@ export class CascosService {
       `)
       .eq('id', id)
       .single();
+
+    this.throwIfError(error);
+    return data;
+  }
+
+  async ajustarBodega(dto: AjustarCascoBodegaDto) {
+    const { data, error } = await this.rpc('ajustar_cascos_bodega', {
+      p_producto_id: dto.producto_id,
+      p_sucursal_id: dto.sucursal_id,
+      p_cantidad: dto.cantidad,
+      p_tipo: dto.tipo,
+      p_nota: dto.nota ?? null,
+    });
+
+    if (error) {
+      throw new BadRequestException(this.mensajeRpc(error));
+    }
+
+    return data;
+  }
+
+  async listarMovimientos() {
+    const { data, error } = await this.client
+      .from('movimientos_cascos')
+      .select(`
+        id,
+        sucursal_id,
+        producto_id,
+        tipo,
+        cantidad,
+        nota,
+        created_at,
+        sucursales (nombre),
+        productos (modelo, marcas (nombre)),
+        usuarios (nombre_completo)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(80);
 
     this.throwIfError(error);
     return data;
