@@ -81,6 +81,41 @@ export class AuthService {
     };
   }
 
+  /**
+   * Comprueba correo y clave de un administrador sin tocar la sesión
+   * del usuario que está en caja.
+   */
+  async verificarAdministrador(
+    email: string,
+    password: string,
+  ): Promise<PerfilUsuario> {
+    const cliente = this.supabase.clienteAnonNuevo();
+    const { data, error } = await cliente.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    if (error || !data.session || !data.user) {
+      throw new UnauthorizedException(
+        'Correo o contraseña de autorización incorrectos',
+      );
+    }
+    try {
+      const perfil = await this.cargarPerfil(
+        data.session.access_token,
+        data.user.id,
+        data.user.email ?? email,
+      );
+      if (perfil.rol !== 'administrador') {
+        throw new UnauthorizedException(
+          'Solo un administrador puede autorizar la reimpresión',
+        );
+      }
+      return perfil;
+    } finally {
+      await cliente.auth.signOut();
+    }
+  }
+
   private cargarPerfil(
     token: string,
     userId: string,

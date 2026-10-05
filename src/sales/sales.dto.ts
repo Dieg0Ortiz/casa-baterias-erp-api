@@ -3,13 +3,16 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsEmail,
   IsInt,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   IsIn,
+  MaxLength,
   Min,
+  MinLength,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
@@ -140,4 +143,23 @@ export class RegistrarVentaDto {
   @ValidateNested({ each: true })
   @Type(() => PagoParcialDto)
   desglose_pago?: PagoParcialDto[];
+}
+
+export class ReimprimirTicketDto {
+  @IsString()
+  @MinLength(4, { message: 'Escribe el folio de la venta' })
+  @MaxLength(40)
+  folio!: string;
+
+  @IsString()
+  @MinLength(4, { message: 'Escribe por qué se reimprime' })
+  @MaxLength(200)
+  motivo!: string;
+
+  @IsEmail({}, { message: 'El correo del administrador no es válido' })
+  email!: string;
+
+  @IsString()
+  @MinLength(6, { message: 'La contraseña de autorización es muy corta' })
+  password!: string;
 }

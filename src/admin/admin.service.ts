@@ -870,6 +870,82 @@ export class AdminService {
       },
     };
   }
+
+  async reporteReimpresiones(dto: VentasReporteDto) {
+    let query = this.client
+      .from('reimpresiones_ticket')
+      .select(
+        'id, folio, numero, motivo, created_at, sucursales(nombre), solicitante:usuarios!reimpresiones_ticket_solicitado_por_fkey(nombre_completo), autorizador:usuarios!reimpresiones_ticket_autorizado_por_fkey(nombre_completo), ventas(total, created_at)',
+      )
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    if (dto.fecha_desde) {
+      query = query.gte('created_at', this.rangoDiaMexico(dto.fecha_desde).inicio);
+    }
+    if (dto.fecha_hasta) {
+      query = query.lte('created_at', this.rangoDiaMexico(dto.fecha_hasta).fin);
+    }
+    if (dto.sucursal_id) query = query.eq('sucursal_id', dto.sucursal_id);
+
+    const { data, error } = await query;
+    this.throwIfError(error);
+
+    const filas = (data ?? []) as unknown as FilaReimpresion[];
+    const reimpresiones = filas.map((fila) => {
+      const sucursal = fila.sucursales;
+      const solicito = fila.solicitante;
+      const autorizo = fila.autorizador;
+      const venta = fila.ventas;
+      const ventaObj = Array.isArray(venta) ? venta[0] : venta;
+      return {
+        id: fila.id,
+        folio: fila.folio,
+        numero: fila.numero,
+        motivo: fila.motivo,
+        created_at: fila.created_at,
+        sucursal:
+          (Array.isArray(sucursal) ? sucursal[0]?.nombre : sucursal?.nombre) ??
+          null,
+        solicito:
+          (Array.isArray(solicito)
+            ? solicito[0]?.nombre_completo
+            : solicito?.nombre_completo) ?? null,
+        autorizo:
+          (Array.isArray(autorizo)
+            ? autorizo[0]?.nombre_completo
+            : autorizo?.nombre_completo) ?? null,
+        total: Number(ventaObj?.total ?? 0),
+        vendida_en: ventaObj?.created_at ?? null,
+      };
+    });
+
+    return {
+      reimpresiones,
+      totales: { reimpresiones: reimpresiones.length },
+    };
+  }
+}
+
+interface FilaReimpresion {
+  id: string;
+  folio: string;
+  numero: number;
+  motivo: string;
+  created_at: string;
+  sucursales: { nombre: string } | { nombre: string }[] | null;
+  solicitante:
+    | { nombre_completo: string }
+    | { nombre_completo: string }[]
+    | null;
+  autorizador:
+    | { nombre_completo: string }
+    | { nombre_completo: string }[]
+    | null;
+  ventas:
+    | { total: number; created_at: string }
+    | { total: number; created_at: string }[]
+    | null;
 }
 
 interface FilaAltaInventario {

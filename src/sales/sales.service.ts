@@ -1,7 +1,13 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
+import { AuthService } from '../auth/auth.service';
+import type { UsuarioAutenticado } from '../common/guards/jwt-auth.guard';
 import { SupabaseService } from '../supabase/supabase.service';
-import { RegistrarVentaDto } from './sales.dto';
+import { RegistrarVentaDto, ReimprimirTicketDto } from './sales.dto';
 
 type RpcResult = {
   data: unknown;
@@ -22,7 +28,10 @@ export interface Venta {
 
 @Injectable()
 export class SalesService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(
+    private readonly supabase: SupabaseService,
+    private readonly auth: AuthService,
+  ) {}
 
   private get client() {
     return this.supabase.getClient();
@@ -82,4 +91,125 @@ export class SalesService {
     this.throwIfError(error);
     return data as Venta[];
   }
+
+  // Reimprime un ticket ya cobrado. Exige la clave de un administrador,
+  // deja el hecho registrado y devuelve los datos para un papel marcado
+  // como reimpresión. No vuelve a cobrar ni mueve inventario.
+  async reimprimir(solicitante: UsuarioAutenticado, dto: ReimprimirTicketDto) {
+    const autorizador = await this.auth.verificarAdministrador(
+      dto.email,
+      dto.password,
+    );
+    const folio = dto.folio.trim();
+
+    const { data: venta, error: errorVenta } = await this.client
+      .from('ventas')
+      .select(
+        'id, folio, sucursal_id, total, estado, created_at, metodo_pago, usuario_id',
+      )
+      .eq('folio', folio)
+      .maybeSingle();
+    this.throwIfError(errorVenta);
+    if (!venta) {
+      throw new NotFoundException(
+        'No hay una venta con ese folio en tu sucursal',
+      );
+    }
+    if (venta.estado === 'cancelada') {
+      throw new BadRequestException('Esa venta está cancelada');
+    }
+
+    const { data: items, error: errorItems } = await this.client
+      .from('venta_items')
+      .select(
+        'cantidad, precio_unitario, tipo_precio, con_casco, comision_casco, productos(modelo, marcas(nombre))',
+      )
+      .eq('venta_id', venta.id);
+    this.throwIfError(errorItems);
+
+    const [sucursalRes, cajeroRes] = await Promise.all([
+      this.client
+        .from('sucursales')
+        .select('nombre, direccion')
+        .eq('id', venta.sucursal_id)
+        .maybeSingle(),
+      this.client
+        .from('usuarios')
+        .select('nombre_completo')
+        .eq('id', venta.usuario_id)
+        .maybeSingle(),
+    ]);
+    this.throwIfError(sucursalRes.error);
+    this.throwIfError(cajeroRes.error);
+
+    const servicio = this.supabase.getServiceClient();
+    const { count, error: errorConteo } = await servicio
+      .from('reimpresiones_ticket')
+      .select('id', { count: 'exact', head: true })
+      .eq('venta_id', venta.id);
+    this.throwIfError(errorConteo);
+    const numero = (count ?? 0) + 1;
+
+    const { error: errorAlta } = await servicio
+      .from('reimpresiones_ticket')
+      .insert({
+        venta_id: venta.id,
+        folio: venta.folio,
+        sucursal_id: venta.sucursal_id,
+        solicitado_por: solicitante.userId,
+        autorizado_por: autorizador.id,
+        motivo: dto.motivo.trim(),
+        numero,
+      });
+    this.throwIfError(errorAlta);
+
+    const lineas = ((items ?? []) as unknown as FilaItemReimpresion[]).map(
+      (item) => {
+        const marcas = item.productos?.marcas;
+        const marca =
+          (Array.isArray(marcas) ? marcas[0]?.nombre : marcas?.nombre)?.trim() ||
+          null;
+        const cantidad = Number(item.cantidad);
+        const comisionLinea = Number(item.comision_casco ?? 0);
+        return {
+          marca,
+          modelo: item.productos?.modelo ?? null,
+          cantidad,
+          precio_unitario: Number(item.precio_unitario),
+          tipo_precio: item.tipo_precio ?? 'default',
+          con_casco: item.con_casco ?? null,
+          comision_casco: cantidad > 0 ? comisionLinea / cantidad : 0,
+        };
+      },
+    );
+
+    return {
+      numero,
+      autorizo: autorizador.nombre_completo,
+      motivo: dto.motivo.trim(),
+      venta: {
+        folio: venta.folio,
+        total: Number(venta.total),
+        estado: venta.estado,
+        created_at: venta.created_at,
+        metodo_pago: venta.metodo_pago ?? 'efectivo',
+        sucursal: sucursalRes.data?.nombre ?? null,
+        direccion: sucursalRes.data?.direccion ?? null,
+        empleado: cajeroRes.data?.nombre_completo ?? null,
+        items: lineas,
+      },
+    };
+  }
+}
+
+interface FilaItemReimpresion {
+  cantidad: number;
+  precio_unitario: number;
+  tipo_precio?: string | null;
+  con_casco?: boolean | null;
+  comision_casco?: number | null;
+  productos: {
+    modelo: string;
+    marcas: { nombre: string } | { nombre: string }[] | null;
+  } | null;
 }

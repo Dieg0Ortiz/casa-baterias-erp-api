@@ -55,6 +55,14 @@ export class SupabaseService implements OnModuleInit {
     return this.anonClient;
   }
 
+  /** Cliente nuevo, sin sesión guardada. Sirve para comprobar una clave
+   *  sin reemplazar la sesión del cajero que está usando el API. */
+  clienteAnonNuevo(): SupabaseClient<any, any, any, any, any> {
+    return createClient(this.url, this.anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  }
+
   /**
    * Cliente con service role (salta RLS). SOLO para operaciones
    * internas de servidor (ej. creación de usuarios en auth.admin).
