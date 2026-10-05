@@ -30,6 +30,17 @@ interface FilaVenta {
   desglose_pago?: Array<{ metodo: string; monto: number; referencia?: string }> | null;
 }
 
+function nombreConMarca(
+  producto: FilaItemVenta['productos'],
+): string | null {
+  if (!producto) return null;
+  const marcas = producto.marcas;
+  const marca = (Array.isArray(marcas) ? marcas[0]?.nombre : marcas?.nombre)?.trim();
+  const modelo = producto.modelo?.trim();
+  if (marca && modelo) return `${marca} ${modelo}`;
+  return modelo || marca || null;
+}
+
 interface FilaItemVenta {
   venta_id: string;
   cantidad: number;
@@ -37,7 +48,10 @@ interface FilaItemVenta {
   tipo_precio?: string | null;
   con_casco?: boolean | null;
   comision_casco?: number | null;
-  productos: { modelo: string } | null;
+  productos: {
+    modelo: string;
+    marcas: { nombre: string } | { nombre: string }[] | null;
+  } | null;
 }
 
 interface FilaCorte {
@@ -590,7 +604,7 @@ export class AdminService {
       this.client
         .from('venta_items')
         .select(
-          'venta_id, cantidad, precio_unitario, tipo_precio, con_casco, comision_casco, productos(modelo)',
+          'venta_id, cantidad, precio_unitario, tipo_precio, con_casco, comision_casco, productos(modelo, marcas(nombre))',
         )
         .in('venta_id', ventaIds),
       this.client.from('sucursales').select('id, nombre'),
@@ -638,7 +652,7 @@ export class AdminService {
         metodo_pago: v.metodo_pago ?? null,
         desglose_pago: v.desglose_pago ?? null,
         items: items.map((i) => ({
-          producto: i.productos?.modelo ?? null,
+          producto: nombreConMarca(i.productos),
           cantidad: i.cantidad,
           precio_unitario: Number(i.precio_unitario),
           tipo_precio: i.tipo_precio ?? 'default',
