@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { CascosService } from './cascos.service';
-import { AjustarCascoBodegaDto, RegistrarIntercambioDto } from './cascos.dto';
+import { AjustarCascoBodegaDto, BajarCascosGrupoDto, RegistrarIntercambioDto } from './cascos.dto';
 import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('cascos/bodega')
@@ -11,6 +11,12 @@ export class CascosBodegaController {
   @Roles('administrador')
   listarMovimientos() {
     return this.cascosService.listarMovimientos();
+  }
+
+  @Post('grupo')
+  @Roles('administrador')
+  bajarGrupo(@Body() dto: BajarCascosGrupoDto) {
+    return this.cascosService.bajarGrupo(dto);
   }
 
   @Post()

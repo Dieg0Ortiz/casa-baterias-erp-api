@@ -1,4 +1,4 @@
-import { IsArray, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export enum MetodoPagoIntercambio {
@@ -36,6 +36,30 @@ export class AjustarCascoBodegaDto {
 
   @IsIn(['alta', 'baja_proveedor'], { message: 'Tipo inválido' })
   tipo!: 'alta' | 'baja_proveedor';
+
+  @IsOptional()
+  @IsString()
+  nota?: string;
+}
+
+export class BajaGrupoItemDto {
+  @IsUUID('4', { message: 'Producto inválido' })
+  producto_id!: string;
+
+  @IsInt({ message: 'Cantidad inválida' })
+  @Min(1, { message: 'La cantidad debe ser al menos 1' })
+  cantidad!: number;
+}
+
+export class BajarCascosGrupoDto {
+  @IsUUID('4', { message: 'Sucursal inválida' })
+  sucursal_id!: string;
+
+  @IsArray({ message: 'No hay cascos que dar de baja' })
+  @ArrayMinSize(1, { message: 'No hay cascos que dar de baja' })
+  @ValidateNested({ each: true })
+  @Type(() => BajaGrupoItemDto)
+  items!: BajaGrupoItemDto[];
 
   @IsOptional()
   @IsString()
