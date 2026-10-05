@@ -36,6 +36,30 @@ export class VentasReporteDto {
   producto_id?: string;
 }
 
+export class AltasReporteDto {
+  @IsOptional()
+  @IsUUID('4', { message: 'Sucursal inválida' })
+  sucursal_id?: string;
+
+  @IsOptional()
+  @IsDateString({}, { message: 'Fecha inicial inválida' })
+  fecha_desde?: string;
+
+  @IsOptional()
+  @IsDateString({}, { message: 'Fecha final inválida' })
+  fecha_hasta?: string;
+
+  @IsOptional()
+  @IsUUID('4', { message: 'Producto inválido' })
+  producto_id?: string;
+
+  @IsOptional()
+  @IsIn(['entrada', 'carga_masiva', 'compra', 'catalogo'], {
+    message: 'Tipo de alta inválido',
+  })
+  origen?: 'entrada' | 'carga_masiva' | 'compra' | 'catalogo';
+}
+
 // DTO para resolver un casco pendiente (sistema de comisiones por casco).
 export class ResolverCascoDto {
   @IsNumber({}, { message: 'Monto a devolver inválido' })

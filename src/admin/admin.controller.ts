@@ -15,6 +15,7 @@ import {
   CrearSucursalDto,
   CrearUsuarioDto,
   ResolverCascoDto,
+  AltasReporteDto,
   VentasReporteDto,
 } from './admin.dto';
 import { AdminService } from './admin.service';
@@ -67,6 +68,12 @@ export class AdminController {
   @Get('reportes/ventas')
   reportesVentasAlias(@Query() dto: VentasReporteDto) {
     return this.adminService.reporteVentas(dto);
+  }
+
+  @Roles('administrador')
+  @Get('reportes/altas')
+  reporteAltas(@Query() dto: AltasReporteDto) {
+    return this.adminService.reporteAltas(dto);
   }
 
   // Listado de usuarios/empleados del sistema. Solo administrador.

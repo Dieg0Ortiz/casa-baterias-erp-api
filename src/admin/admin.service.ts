@@ -7,6 +7,7 @@ import {
   CrearSucursalDto,
   CrearUsuarioDto,
   ResolverCascoDto,
+  AltasReporteDto,
   VentasReporteDto,
 } from './admin.dto';
 
@@ -802,4 +803,90 @@ export class AdminService {
     }
     return data;
   }
+
+  async reporteAltas(dto: AltasReporteDto) {
+    let query = this.client
+      .from('altas_inventario')
+      .select(
+        'folio, origen, modo, cantidad, existencia_anterior, existencia_nueva, nota, referencia, created_at, sucursales(nombre), usuarios(nombre_completo), productos(modelo, codigo_barras, marcas(nombre))',
+      )
+      .order('created_at', { ascending: false })
+      .limit(5000);
+
+    if (dto.sucursal_id) query = query.eq('sucursal_id', dto.sucursal_id);
+    if (dto.producto_id) query = query.eq('producto_id', dto.producto_id);
+    if (dto.origen) query = query.eq('origen', dto.origen);
+    if (dto.fecha_desde) {
+      query = query.gte('created_at', this.rangoDiaMexico(dto.fecha_desde).inicio);
+    }
+    if (dto.fecha_hasta) {
+      query = query.lte('created_at', this.rangoDiaMexico(dto.fecha_hasta).fin);
+    }
+
+    const { data, error } = await query;
+    this.throwIfError(error);
+
+    const filas = (data ?? []) as unknown as FilaAltaInventario[];
+    const folios = new Set<string>();
+    let unidades = 0;
+    const lineas = filas.map((fila) => {
+      folios.add(fila.folio);
+      unidades += fila.cantidad;
+      const marcas = fila.productos?.marcas;
+      const marca = (
+        Array.isArray(marcas) ? marcas[0]?.nombre : marcas?.nombre
+      )?.trim() || null;
+      const sucursal = fila.sucursales;
+      const usuario = fila.usuarios;
+      return {
+        folio: fila.folio,
+        origen: fila.origen,
+        modo: fila.modo,
+        cantidad: fila.cantidad,
+        existencia_anterior: fila.existencia_anterior,
+        existencia_nueva: fila.existencia_nueva,
+        nota: fila.nota,
+        referencia: fila.referencia,
+        created_at: fila.created_at,
+        sucursal:
+          (Array.isArray(sucursal) ? sucursal[0]?.nombre : sucursal?.nombre) ??
+          null,
+        usuario:
+          (Array.isArray(usuario)
+            ? usuario[0]?.nombre_completo
+            : usuario?.nombre_completo) ?? null,
+        marca,
+        modelo: fila.productos?.modelo ?? null,
+        codigo_barras: fila.productos?.codigo_barras ?? null,
+      };
+    });
+
+    return {
+      lineas,
+      totales: {
+        operaciones: folios.size,
+        lineas: lineas.length,
+        unidades,
+      },
+    };
+  }
+}
+
+interface FilaAltaInventario {
+  folio: string;
+  origen: string;
+  modo: string;
+  cantidad: number;
+  existencia_anterior: number | null;
+  existencia_nueva: number | null;
+  nota: string | null;
+  referencia: string | null;
+  created_at: string;
+  sucursales: { nombre: string } | { nombre: string }[] | null;
+  usuarios: { nombre_completo: string } | { nombre_completo: string }[] | null;
+  productos: {
+    modelo: string;
+    codigo_barras: string;
+    marcas: { nombre: string } | { nombre: string }[] | null;
+  } | null;
 }
