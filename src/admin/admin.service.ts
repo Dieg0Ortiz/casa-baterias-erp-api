@@ -30,15 +30,20 @@ interface FilaVenta {
   desglose_pago?: Array<{ metodo: string; monto: number; referencia?: string }> | null;
 }
 
-function nombreConMarca(
-  producto: FilaItemVenta['productos'],
-): string | null {
-  if (!producto) return null;
+function partesProducto(producto: FilaItemVenta['productos']): {
+  marca: string | null;
+  modelo: string | null;
+  producto: string | null;
+} {
+  if (!producto) return { marca: null, modelo: null, producto: null };
   const marcas = producto.marcas;
-  const marca = (Array.isArray(marcas) ? marcas[0]?.nombre : marcas?.nombre)?.trim();
-  const modelo = producto.modelo?.trim();
-  if (marca && modelo) return `${marca} ${modelo}`;
-  return modelo || marca || null;
+  const marca =
+    (Array.isArray(marcas) ? marcas[0]?.nombre : marcas?.nombre)?.trim() ||
+    null;
+  const modelo = producto.modelo?.trim() || null;
+  const nombre =
+    marca && modelo ? `${marca} ${modelo}` : modelo || marca || null;
+  return { marca, modelo, producto: nombre };
 }
 
 interface FilaItemVenta {
@@ -652,7 +657,7 @@ export class AdminService {
         metodo_pago: v.metodo_pago ?? null,
         desglose_pago: v.desglose_pago ?? null,
         items: items.map((i) => ({
-          producto: nombreConMarca(i.productos),
+          ...partesProducto(i.productos),
           cantidad: i.cantidad,
           precio_unitario: Number(i.precio_unitario),
           tipo_precio: i.tipo_precio ?? 'default',
