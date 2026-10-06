@@ -190,13 +190,16 @@ export class InventoryService {
   }
 
   // Eliminar o vaciar existencias vía RPC (RLS no permite UPDATE directo).
-  // Carga de existencias por código de barras en una sola llamada. Los
-  // códigos desconocidos no detienen la carga: la RPC los devuelve para
-  // revisarlos.
+  // Carga de existencias por marca/modelo o código de barras. Los
+  // renglones que no se relacionan con el catálogo no detienen la carga:
+  // la RPC los devuelve para revisarlos.
   async cargarExistenciasMasivo(dto: CargarExistenciasMasivoDto) {
     const { data, error } = await this.rpc('cargar_existencias_masivo', {
       p_sucursal_id: dto.sucursal_id,
-      p_items: dto.items,
+      p_items: dto.items.map((it) => ({
+        referencia: (it.referencia ?? it.codigo_barras ?? '').trim(),
+        cantidad: it.cantidad,
+      })),
       p_modo: dto.modo ?? 'sumar',
     });
 

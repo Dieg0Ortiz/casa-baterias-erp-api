@@ -8,6 +8,8 @@ import {
   IsString,
   IsUUID,
   Min,
+  MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -61,17 +63,24 @@ export class CorregirSucursalDto {
 }
 
 export class CargaMasivaItemDto {
-  @IsString({ message: 'Código de barras inválido' })
-  codigo_barras!: string;
+  @ValidateIf((o: CargaMasivaItemDto) => !o.referencia)
+  @IsString({ message: 'Escribe la marca y el modelo, o el código de barras' })
+  @MinLength(1, { message: 'Escribe la marca y el modelo, o el código de barras' })
+  codigo_barras?: string;
+
+  @ValidateIf((o: CargaMasivaItemDto) => !o.codigo_barras)
+  @IsString({ message: 'Escribe la marca y el modelo, o el código de barras' })
+  @MinLength(1, { message: 'Escribe la marca y el modelo, o el código de barras' })
+  referencia?: string;
 
   @IsInt({ message: 'Cantidad inválida' })
   @Min(0, { message: 'La cantidad no puede ser negativa' })
   cantidad!: number;
 }
 
-// Carga de existencias de una sucursal en una sola operación, por código de
-// barras. `sumar` acumula sobre lo que ya hay; `reemplazar` deja la existencia
-// exactamente en la cantidad indicada (conteo físico).
+// Carga de existencias de una sucursal en una sola operación. Cada renglón
+// se relaciona con el catálogo por código de barras o por marca y modelo
+// (GONHER 47). `sumar` acumula; `reemplazar` deja la cantidad exacta.
 export class CargarExistenciasMasivoDto {
   @IsUUID('4', { message: 'Sucursal inválida' })
   sucursal_id!: string;
