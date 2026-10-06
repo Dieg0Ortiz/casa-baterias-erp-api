@@ -137,62 +137,30 @@ export class InventoryService {
     return data;
   }
 
-  // Reabastecimiento de inventario / entrada de mercancía: incrementa
-  // las existencias de un producto existente en la sucursal indicada.
+  // Reabastecimiento: una o varias pilas con el mismo folio de factura.
   async reabastecer(dto: ReabastecerInventarioDto) {
-    const { data, error } = await this.rpc('reabastecer_inventario', {
-      p_producto_id: dto.producto_id,
+    const items =
+      dto.items && dto.items.length > 0
+        ? dto.items
+        : dto.producto_id && dto.cantidad
+          ? [{ producto_id: dto.producto_id, cantidad: dto.cantidad }]
+          : [];
+    if (items.length === 0) {
+      throw new BadRequestException('Agrega al menos una pila');
+    }
+
+    const { data, error } = await this.rpc('reabastecer_inventario_lote', {
       p_sucursal_id: dto.sucursal_id,
-      p_cantidad: dto.cantidad,
+      p_items: items,
       p_nota: dto.nota ?? null,
     });
 
-    if (!error) {
-      return data;
+    if (error) {
+      throw new BadRequestException(this.mensajeRpc(error));
     }
-
-    // Si la RPC aún no está creada en la BD, ejecutamos la actualización
-    // directa con el cliente de Supabase autenticado.
-    const { data: existencia, error: errBusq } = await this.client
-      .from('inventario')
-      .select('id, cantidad, cascos_disponibles')
-      .eq('producto_id', dto.producto_id)
-      .eq('sucursal_id', dto.sucursal_id)
-      .maybeSingle();
-
-    if (errBusq) {
-      throw new BadRequestException(this.mensajeRpc(error || errBusq));
-    }
-
-    if (existencia) {
-      const { data: actualizado, error: errUpd } = await this.client
-        .from('inventario')
-        .update({ cantidad: existencia.cantidad + dto.cantidad })
-        .eq('id', existencia.id)
-        .select()
-        .single();
-      this.throwIfError(errUpd);
-      return actualizado;
-    } else {
-      const { data: insertado, error: errIns } = await this.client
-        .from('inventario')
-        .insert({
-          producto_id: dto.producto_id,
-          sucursal_id: dto.sucursal_id,
-          cantidad: dto.cantidad,
-          cascos_disponibles: 0,
-        })
-        .select()
-        .single();
-      this.throwIfError(errIns);
-      return insertado;
-    }
+    return data;
   }
 
-  // Eliminar o vaciar existencias vía RPC (RLS no permite UPDATE directo).
-  // Carga de existencias por marca/modelo o código de barras. Los
-  // renglones que no se relacionan con el catálogo no detienen la carga:
-  // la RPC los devuelve para revisarlos.
   async cargarExistenciasMasivo(dto: CargarExistenciasMasivoDto) {
     const { data, error } = await this.rpc('cargar_existencias_masivo', {
       p_sucursal_id: dto.sucursal_id,
@@ -201,6 +169,7 @@ export class InventoryService {
         cantidad: it.cantidad,
       })),
       p_modo: dto.modo ?? 'sumar',
+      p_nota: dto.nota ?? null,
     });
 
     if (error) {

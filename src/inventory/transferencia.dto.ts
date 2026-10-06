@@ -9,6 +9,7 @@ import {
   IsUUID,
   Min,
   MinLength,
+  MaxLength,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
@@ -32,20 +33,38 @@ export class TransferirInventarioDto {
   nota?: string;
 }
 
-export class ReabastecerInventarioDto {
+export class ReabastecerItemDto {
   @IsUUID('4', { message: 'Producto inválido' })
   producto_id!: string;
-
-  @IsUUID('4', { message: 'Sucursal inválida' })
-  sucursal_id!: string;
 
   @IsInt({ message: 'Cantidad inválida' })
   @Min(1, { message: 'La cantidad a ingresar debe ser al menos 1' })
   cantidad!: number;
+}
+
+export class ReabastecerInventarioDto {
+  @IsUUID('4', { message: 'Sucursal inválida' })
+  sucursal_id!: string;
+
+  @IsOptional()
+  @IsUUID('4', { message: 'Producto inválido' })
+  producto_id?: string;
+
+  @IsOptional()
+  @IsInt({ message: 'Cantidad inválida' })
+  @Min(1, { message: 'La cantidad a ingresar debe ser al menos 1' })
+  cantidad?: number;
 
   @IsOptional()
   @IsString()
+  @MaxLength(80, { message: 'El folio de la factura o nota es muy largo' })
   nota?: string;
+
+  @IsOptional()
+  @IsArray({ message: 'La lista de pilas no es válida' })
+  @ValidateNested({ each: true })
+  @Type(() => ReabastecerItemDto)
+  items?: ReabastecerItemDto[];
 }
 
 // Corrección de sucursal: mueve TODA la existencia del producto de la
@@ -88,6 +107,11 @@ export class CargarExistenciasMasivoDto {
   @IsOptional()
   @IsIn(['sumar', 'reemplazar'], { message: 'Modo inválido: usa sumar o reemplazar' })
   modo?: 'sumar' | 'reemplazar';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80, { message: 'El folio de la factura o nota es muy largo' })
+  nota?: string;
 
   @IsArray({ message: 'No hay renglones que cargar' })
   @ArrayMinSize(1, { message: 'No hay renglones que cargar' })
