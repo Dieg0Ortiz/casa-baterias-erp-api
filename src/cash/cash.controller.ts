@@ -8,10 +8,10 @@ import { AbrirCajaDto, CerrarCajaDto } from './cash.dto';
 export class CashController {
   constructor(private readonly cashService: CashService) {}
 
-  // Caja abierta del cajero con el acumulado del turno (Sección 7).
+  // Caja abierta de la sucursal del usuario con el acumulado del turno (Sección 7).
   @Get('activa')
   cajaActiva(@CurrentUser() user: UsuarioAutenticado) {
-    return this.cashService.cajaActiva(user.userId);
+    return this.cashService.cajaActiva(user.userId, user.perfil?.sucursal_id ?? null);
   }
 
   // Historial de cortes del cajero (Sección 7).

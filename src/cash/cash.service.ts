@@ -72,17 +72,19 @@ export class CashService {
     return data;
   }
 
-  // Caja activa del usuario con el acumulado de ventas del turno. RLS
-  // limita el SELECT de cortes_caja a las propias (o todas si es admin);
-  // el filtro por usuario_id hace que el cajero vea solo su caja.
-  async cajaActiva(userId: string) {
-    const { data: cortes, error } = await this.client
+  // La caja es por sucursal (una sola abierta, compartida por todos sus
+  // empleados), así que se busca por sucursal_id y no por quien la abrió.
+  async cajaActiva(userId: string, sucursalId: string | null) {
+    let consulta = this.client
       .from('cortes_caja')
       .select(
         'id, sucursal_id, usuario_id, monto_inicial, monto_final_reportado, monto_calculado, diferencia, estado, abierto_en, cerrado_en',
       )
-      .eq('usuario_id', userId)
-      .eq('estado', 'abierto')
+      .eq('estado', 'abierto');
+    consulta = sucursalId
+      ? consulta.eq('sucursal_id', sucursalId)
+      : consulta.eq('usuario_id', userId);
+    const { data: cortes, error } = await consulta
       .order('abierto_en', { ascending: false })
       .limit(1);
     this.throwIfError(error);
