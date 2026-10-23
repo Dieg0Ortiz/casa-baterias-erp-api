@@ -85,10 +85,30 @@ export class AuthService {
    * Comprueba correo y clave de un administrador sin tocar la sesión
    * del usuario que está en caja.
    */
-  async verificarAdministrador(
+  verificarAdministrador(
     email: string,
     password: string,
   ): Promise<PerfilUsuario> {
+    return this.conAdministrador(email, password, (perfil) =>
+      Promise.resolve(perfil),
+    );
+  }
+
+  /**
+   * Ejecuta `accion` con la sesión del administrador que escribió su clave
+   * en la caja: dentro de ella, `SupabaseService.getClient()` consulta como
+   * ese administrador, de modo que las funciones de la base (que validan el
+   * rol con auth.uid()) también comprueban la autorización.
+   *
+   * Al terminar cierra solo esa sesión (scope local). Con el cierre global de
+   * antes, cada autorización desconectaba al administrador del panel y de
+   * cualquier otro dispositivo.
+   */
+  async conAdministrador<T>(
+    email: string,
+    password: string,
+    accion: (administrador: PerfilUsuario) => Promise<T>,
+  ): Promise<T> {
     const cliente = this.supabase.clienteAnonNuevo();
     const { data, error } = await cliente.auth.signInWithPassword({
       email: email.trim(),
@@ -99,20 +119,21 @@ export class AuthService {
         'Correo o contraseña de autorización incorrectos',
       );
     }
+    const token = data.session.access_token;
+    const userId = data.user.id;
+    const correo = data.user.email ?? email;
     try {
-      const perfil = await this.cargarPerfil(
-        data.session.access_token,
-        data.user.id,
-        data.user.email ?? email,
-      );
+      const perfil = await this.cargarPerfil(token, userId, correo);
       if (perfil.rol !== 'administrador') {
         throw new UnauthorizedException(
-          'Solo un administrador puede autorizar la reimpresión',
+          'Solo un administrador puede autorizar esta operación',
         );
       }
-      return perfil;
+      return await runWithContext({ token, userId, email: correo }, () =>
+        accion(perfil),
+      );
     } finally {
-      await cliente.auth.signOut();
+      await cliente.auth.signOut({ scope: 'local' });
     }
   }
 
