@@ -9,6 +9,7 @@ import {
   IsString,
   IsUUID,
   Matches,
+  MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
@@ -135,6 +136,11 @@ export class ActualizarUsuarioDto {
 const CLAVE_SUCURSAL = /^[A-Za-z0-9]{2,6}$/;
 const MENSAJE_CLAVE = 'La clave debe tener de 2 a 6 letras o números';
 
+// Texto al pie del ticket del cliente (garantía y centros de servicio).
+// Mismo límite que la restricción de la base.
+const LARGO_LEYENDA = 2000;
+const MENSAJE_LEYENDA = `La leyenda del ticket admite hasta ${LARGO_LEYENDA} caracteres`;
+
 // DTO para crear una nueva sucursal.
 export class CrearSucursalDto {
   @IsString({ message: 'El nombre de la sucursal es obligatorio' })
@@ -152,6 +158,11 @@ export class CrearSucursalDto {
   @IsOptional()
   @Matches(CLAVE_SUCURSAL, { message: MENSAJE_CLAVE })
   clave?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(LARGO_LEYENDA, { message: MENSAJE_LEYENDA })
+  leyenda_ticket?: string;
 }
 
 // DTO para actualizar una sucursal existente.
@@ -172,4 +183,10 @@ export class ActualizarSucursalDto {
   @IsOptional()
   @Matches(CLAVE_SUCURSAL, { message: MENSAJE_CLAVE })
   clave?: string;
+
+  // Vacío borra la leyenda: el ticket sale sin ella.
+  @IsOptional()
+  @IsString()
+  @MaxLength(LARGO_LEYENDA, { message: MENSAJE_LEYENDA })
+  leyenda_ticket?: string;
 }

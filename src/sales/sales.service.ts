@@ -5,7 +5,17 @@ import {
 } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
 import { AuthService } from '../auth/auth.service';
-import type { UsuarioAutenticado } from '../common/guards/jwt-auth.guard';
+import { rangoDiaMexico } from '../common/fechas';
+import type {
+  PerfilUsuario,
+  UsuarioAutenticado,
+} from '../common/guards/jwt-auth.guard';
+import {
+  marcaYModelo,
+  primero,
+  type ProductoConMarca,
+  type Relacion,
+} from '../common/relaciones';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
   CancelarTicketDto,
@@ -102,6 +112,54 @@ export class SalesService {
     return data as Venta[];
   }
 
+  // Ventas de hoy (hora de México), de la más reciente a la más vieja, con
+  // lo necesario para reconocerlas en la caja: hora, total, forma de pago,
+  // quién cobró y qué pilas llevó. Sirve para reimprimir un ticket perdido
+  // sin conocer el folio. El trabajador ve las de su sucursal; el
+  // administrador, las de la sucursal que pida o las de todas.
+  async ventasDelDia(perfil: PerfilUsuario, sucursalPedida?: string) {
+    const sucursalId =
+      perfil.rol === 'administrador'
+        ? (sucursalPedida ?? perfil.sucursal_id)
+        : perfil.sucursal_id;
+    if (!sucursalId && perfil.rol !== 'administrador') {
+      throw new BadRequestException('Tu usuario no tiene sucursal asignada');
+    }
+
+    const { inicio, fin } = rangoDiaMexico();
+    let consulta = this.client
+      .from('ventas')
+      .select(
+        'id, folio, total, estado, created_at, metodo_pago, sucursales(nombre), cajero:usuarios!ventas_usuario_id_fkey(nombre_completo), venta_items(cantidad, productos(modelo, marcas(nombre)))',
+      )
+      .gte('created_at', inicio)
+      .lte('created_at', fin)
+      .order('created_at', { ascending: false });
+    if (sucursalId) {
+      consulta = consulta.eq('sucursal_id', sucursalId);
+    }
+    const { data, error } = await consulta;
+    this.throwIfError(error);
+
+    return ((data ?? []) as unknown as FilaVentaDelDia[]).map((venta) => ({
+      id: venta.id,
+      folio: venta.folio,
+      total: Number(venta.total),
+      estado: venta.estado,
+      created_at: venta.created_at,
+      metodo_pago: venta.metodo_pago ?? 'efectivo',
+      sucursal: primero(venta.sucursales)?.nombre ?? null,
+      cajero: primero(venta.cajero)?.nombre_completo ?? null,
+      articulos: (venta.venta_items ?? []).map((item) => {
+        const { marca, modelo } = marcaYModelo(item.productos);
+        return {
+          cantidad: Number(item.cantidad),
+          producto: [marca, modelo].filter(Boolean).join(' ') || 'Producto',
+        };
+      }),
+    }));
+  }
+
   // Cancelación pedida desde la caja: el trabajador da el folio y un
   // administrador escribe su clave. La venta se busca con la sesión del
   // trabajador (RLS: solo su sucursal) y cancelar_venta corre con la del
@@ -190,7 +248,7 @@ export class SalesService {
     const { data: venta, error: errorVenta } = await this.client
       .from('ventas')
       .select(
-        'id, folio, sucursal_id, total, estado, created_at, metodo_pago, usuario_id',
+        'id, folio, sucursal_id, total, estado, created_at, metodo_pago, desglose_pago, usuario_id',
       )
       .eq('folio', folio)
       .maybeSingle();
@@ -215,7 +273,7 @@ export class SalesService {
     const [sucursalRes, cajeroRes] = await Promise.all([
       this.client
         .from('sucursales')
-        .select('nombre, direccion')
+        .select('nombre, direccion, leyenda_ticket')
         .eq('id', venta.sucursal_id)
         .maybeSingle(),
       this.client
@@ -278,13 +336,31 @@ export class SalesService {
         estado: venta.estado,
         created_at: venta.created_at,
         metodo_pago: venta.metodo_pago ?? 'efectivo',
+        desglose_pago: (venta.desglose_pago ?? null) as Venta['desglose_pago'],
         sucursal: sucursalRes.data?.nombre ?? null,
         direccion: sucursalRes.data?.direccion ?? null,
+        leyenda_ticket: (sucursalRes.data?.leyenda_ticket ?? null) as
+          string | null,
         empleado: cajeroRes.data?.nombre_completo ?? null,
         items: lineas,
       },
     };
   }
+}
+
+interface FilaVentaDelDia {
+  id: string;
+  folio: string;
+  total: number;
+  estado: string;
+  created_at: string;
+  metodo_pago: string | null;
+  sucursales: Relacion<{ nombre: string | null }>;
+  cajero: Relacion<{ nombre_completo: string | null }>;
+  venta_items: Array<{
+    cantidad: number;
+    productos: Relacion<ProductoConMarca>;
+  }> | null;
 }
 
 interface FilaItemReimpresion {

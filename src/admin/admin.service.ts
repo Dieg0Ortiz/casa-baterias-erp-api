@@ -48,6 +48,22 @@ function partesProducto(producto: FilaItemVenta['productos']): {
   return { marca, modelo, producto: nombre };
 }
 
+const COLUMNAS_SUCURSAL =
+  'id, nombre, clave, es_matriz, direccion, leyenda_ticket, created_at';
+
+// La leyenda se imprime renglón por renglón: se respetan los saltos de
+// línea y solo se quitan espacios sobrantes. Vacía queda en null.
+function limpiarLeyenda(texto: string | undefined): string | null {
+  if (texto === undefined) return null;
+  const limpia = texto
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((renglon) => renglon.trimEnd())
+    .join('\n')
+    .trim();
+  return limpia || null;
+}
+
 interface FilaItemVenta {
   venta_id: string;
   cantidad: number;
@@ -286,10 +302,7 @@ export class AdminService {
 
   async listarSucursales() {
     const [resSucursales, resUsuarios] = await Promise.all([
-      this.client
-        .from('sucursales')
-        .select('id, nombre, clave, es_matriz, direccion, created_at')
-        .order('nombre'),
+      this.client.from('sucursales').select(COLUMNAS_SUCURSAL).order('nombre'),
       this.client
         .from('usuarios')
         .select('sucursal_id')
@@ -314,6 +327,7 @@ export class AdminService {
       clave: string;
       es_matriz: boolean;
       direccion: string | null;
+      leyenda_ticket: string | null;
       created_at: string;
     }>;
 
@@ -340,10 +354,11 @@ export class AdminService {
         nombre: dto.nombre.trim(),
         es_matriz: esMatriz,
         direccion: dto.direccion?.trim() || null,
+        leyenda_ticket: limpiarLeyenda(dto.leyenda_ticket),
         // Sin clave, la base propone una a partir del nombre.
         ...(dto.clave ? { clave: dto.clave.trim().toUpperCase() } : {}),
       })
-      .select('id, nombre, clave, es_matriz, direccion, created_at')
+      .select(COLUMNAS_SUCURSAL)
       .single();
 
     this.throwIfError(error);
@@ -371,6 +386,9 @@ export class AdminService {
     if (dto.direccion !== undefined) {
       cambios.direccion = dto.direccion.trim() || null;
     }
+    if (dto.leyenda_ticket !== undefined) {
+      cambios.leyenda_ticket = limpiarLeyenda(dto.leyenda_ticket);
+    }
     // La base rechaza el cambio si la sucursal ya emitió folios con su clave.
     if (dto.clave !== undefined) {
       cambios.clave = dto.clave.trim().toUpperCase();
@@ -395,7 +413,7 @@ export class AdminService {
       .from('sucursales')
       .update(cambios)
       .eq('id', id)
-      .select('id, nombre, clave, es_matriz, direccion, created_at')
+      .select(COLUMNAS_SUCURSAL)
       .single();
 
     this.throwIfError(error);

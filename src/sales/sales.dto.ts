@@ -193,3 +193,11 @@ export class ReimprimirTicketDto {
   @MinLength(6, { message: 'La contraseña de autorización es muy corta' })
   password!: string;
 }
+
+// Ventas de hoy para elegir cuál reimprimir. El trabajador siempre ve las
+// de su sucursal; el administrador puede pedir otra.
+export class VentasDelDiaDto {
+  @IsOptional()
+  @IsUUID('4', { message: 'Sucursal inválida' })
+  sucursal_id?: string;
+}

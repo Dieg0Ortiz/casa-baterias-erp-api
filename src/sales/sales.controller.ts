@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -16,6 +17,7 @@ import {
   CancelarVentaDto,
   RegistrarVentaDto,
   ReimprimirTicketDto,
+  VentasDelDiaDto,
 } from './sales.dto';
 
 @Controller('sales')
@@ -55,6 +57,15 @@ export class SalesController {
     @Body() dto: CancelarVentaDto,
   ) {
     return this.salesService.cancelarPorAdministrador(user, id, dto);
+  }
+
+  // Ventas de hoy de la sucursal, para elegir cuál reimprimir.
+  @Get('hoy')
+  ventasDelDia(
+    @CurrentUser() user: UsuarioAutenticado,
+    @Query() consulta: VentasDelDiaDto,
+  ) {
+    return this.salesService.ventasDelDia(user.perfil, consulta.sucursal_id);
   }
 
   @Get()

@@ -39,7 +39,8 @@ export class CatalogService {
   async listarSucursales() {
     const { data, error } = await this.client
       .from('sucursales')
-      .select('id, nombre, es_matriz')
+      // La app imprime la dirección y la leyenda (garantía) en el ticket.
+      .select('id, nombre, es_matriz, direccion, leyenda_ticket')
       .order('nombre');
     this.throwIfError(error);
     return data;
