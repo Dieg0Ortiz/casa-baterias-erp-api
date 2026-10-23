@@ -1,32 +1,57 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { UsuarioAutenticado } from '../common/guards/jwt-auth.guard';
 import { CashService } from './cash.service';
-import { AbrirCajaDto, CerrarCajaDto } from './cash.dto';
+import { AbrirCajaDto, CerrarCajaDto, ConsultaCajaDto } from './cash.dto';
 
 @Controller('cash')
 export class CashController {
   constructor(private readonly cashService: CashService) {}
 
-  // Caja abierta de la sucursal del usuario con el acumulado del turno (Sección 7).
+  // Caja abierta de la sucursal con el resumen del turno: corte de efectivo,
+  // corte de tarjetas y transferencias, y créditos aparte.
   @Get('activa')
-  cajaActiva(@CurrentUser() user: UsuarioAutenticado) {
-    return this.cashService.cajaActiva(user.userId, user.perfil?.sucursal_id ?? null);
+  cajaActiva(
+    @CurrentUser() user: UsuarioAutenticado,
+    @Query() consulta: ConsultaCajaDto,
+  ) {
+    return this.cashService.cajaActiva(user.perfil, consulta.sucursal_id);
   }
 
-  // Historial de cortes del cajero (Sección 7).
+  // Historial de cortes de la sucursal (Sección 7).
   @Get()
-  historial(@CurrentUser() user: UsuarioAutenticado) {
-    return this.cashService.historial(user.userId);
+  historial(
+    @CurrentUser() user: UsuarioAutenticado,
+    @Query() consulta: ConsultaCajaDto,
+  ) {
+    return this.cashService.historial(
+      user.perfil,
+      consulta.sucursal_id,
+      consulta.limite,
+    );
+  }
+
+  // Resumen de un corte (abierto o cerrado), para verlo o reimprimirlo.
+  @Get(':id/resumen')
+  resumen(@Param('id', ParseUUIDPipe) id: string) {
+    return this.cashService.resumen(id);
   }
 
   @Post('abrir')
-  abrir(@CurrentUser() user: UsuarioAutenticado, @Body() dto: AbrirCajaDto) {
-    return this.cashService.abrirCaja(user.userId, dto);
+  abrir(@Body() dto: AbrirCajaDto) {
+    return this.cashService.abrirCaja(dto);
   }
 
   @Post('cerrar')
-  cerrar(@CurrentUser() user: UsuarioAutenticado, @Body() dto: CerrarCajaDto) {
-    return this.cashService.cerrarCaja(user.userId, dto);
+  cerrar(@Body() dto: CerrarCajaDto) {
+    return this.cashService.cerrarCaja(dto);
   }
 }

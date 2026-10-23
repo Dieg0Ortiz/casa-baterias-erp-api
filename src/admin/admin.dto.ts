@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Min,
   MinLength,
 } from 'class-validator';
@@ -129,6 +130,11 @@ export class ActualizarUsuarioDto {
   password?: string;
 }
 
+// Clave corta de la sucursal que va en sus folios (NV-MAT-000124). Si no se
+// captura, la base propone una a partir del nombre.
+const CLAVE_SUCURSAL = /^[A-Za-z0-9]{2,6}$/;
+const MENSAJE_CLAVE = 'La clave debe tener de 2 a 6 letras o números';
+
 // DTO para crear una nueva sucursal.
 export class CrearSucursalDto {
   @IsString({ message: 'El nombre de la sucursal es obligatorio' })
@@ -142,6 +148,10 @@ export class CrearSucursalDto {
   @IsOptional()
   @IsString()
   direccion?: string;
+
+  @IsOptional()
+  @Matches(CLAVE_SUCURSAL, { message: MENSAJE_CLAVE })
+  clave?: string;
 }
 
 // DTO para actualizar una sucursal existente.
@@ -158,4 +168,8 @@ export class ActualizarSucursalDto {
   @IsOptional()
   @IsString()
   direccion?: string;
+
+  @IsOptional()
+  @Matches(CLAVE_SUCURSAL, { message: MENSAJE_CLAVE })
+  clave?: string;
 }

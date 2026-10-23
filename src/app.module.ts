@@ -19,6 +19,7 @@ import { PurchasesModule } from './purchases/purchases.module';
 import { CascosModule } from './cascos/cascos.module';
 import { CreditosModule } from './creditos/creditos.module';
 import { ReportsModule } from './reports/reports.module';
+import { DevolucionesModule } from './devoluciones/devoluciones.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { ReportsModule } from './reports/reports.module';
     CascosModule,
     CreditosModule,
     ReportsModule,
+    DevolucionesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

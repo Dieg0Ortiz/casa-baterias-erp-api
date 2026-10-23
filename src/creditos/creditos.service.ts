@@ -1,10 +1,120 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { PostgrestError } from '@supabase/supabase-js';
+import { fechaMexico, rangoDiaMexico } from '../common/fechas';
+import { redondear } from '../common/pagos';
+import {
+  marcaYModelo,
+  primero,
+  type ProductoConMarca,
+  type Relacion,
+} from '../common/relaciones';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
   CrearEmpresaCreditoDto,
   ActualizarEmpresaCreditoDto,
+  EditarVentaCreditoDto,
   RegistrarAbonoCreditoDto,
+  ReporteCreditosDiaDto,
 } from './creditos.dto';
+
+type Nombre = Relacion<{ nombre: string }>;
+type NombreCompleto = Relacion<{ nombre_completo: string }>;
+
+interface FilaCreditoDia {
+  id: string;
+  monto_total: number;
+  saldo_pendiente: number;
+  estado: string;
+  folio_vale: string | null;
+  recibido_por: string | null;
+  vehiculo_placas: string | null;
+  created_at: string;
+  empresa: Nombre;
+  sucursal: Nombre;
+  venta: Relacion<{
+    folio: string;
+    usuario: NombreCompleto;
+    venta_items: Array<{
+      cantidad: number;
+      precio_unitario: number;
+      con_casco: boolean | null;
+      producto: Relacion<ProductoConMarca>;
+    }> | null;
+  }>;
+}
+
+interface FilaEdicionCredito {
+  id: string;
+  credito_venta_id: string;
+  motivo: string;
+  antes: unknown;
+  despues: unknown;
+  total_anterior: number;
+  total_nuevo: number;
+  created_at: string;
+  usuario: NombreCompleto;
+}
+
+interface FilaAbonoDia {
+  id: string;
+  monto: number;
+  metodo_pago: string;
+  referencia: string | null;
+  created_at: string;
+  empresa: Nombre;
+  sucursal: Nombre;
+  usuario: NombreCompleto;
+}
+
+interface FilaTraspasoDia {
+  id: string;
+  cantidad: number;
+  nota: string | null;
+  created_at: string;
+  producto: Relacion<ProductoConMarca>;
+  origen: Nombre;
+  destino: Nombre;
+  autorizo: NombreCompleto;
+}
+
+// Una venta a crédito sigue abierta mientras no esté pagada ni cancelada.
+const ESTADOS_CERRADOS = ['pagado', 'cancelado'];
+
+export interface RenglonCredito {
+  cantidad: number;
+  producto?: Relacion<{
+    modelo: string | null;
+    marcas?: Relacion<{ nombre: string | null }>;
+  }>;
+}
+
+export interface PiezasDeModelo {
+  marca: string | null;
+  modelo: string | null;
+  cantidad: number;
+}
+
+/**
+ * Pilas que una empresa tiene a crédito, sumadas por marca y modelo, de la
+ * que más piezas tiene a la que menos.
+ */
+export function piezasPorModelo(renglones: RenglonCredito[]): PiezasDeModelo[] {
+  const porModelo = new Map<string, PiezasDeModelo>();
+  for (const r of renglones) {
+    const { marca, modelo } = marcaYModelo(r.producto);
+    const clave = `${marca ?? ''}|${modelo ?? ''}`;
+    const actual = porModelo.get(clave) ?? { marca, modelo, cantidad: 0 };
+    actual.cantidad += Number(r.cantidad) || 0;
+    porModelo.set(clave, actual);
+  }
+  return [...porModelo.values()].sort(
+    (a, b) =>
+      b.cantidad - a.cantidad ||
+      `${a.marca} ${a.modelo}`.localeCompare(`${b.marca} ${b.modelo}`, 'es', {
+        numeric: true,
+      }),
+  );
+}
 
 @Injectable()
 export class CreditosService {
@@ -51,17 +161,23 @@ export class CreditosService {
 
     const empresas = (data ?? []).map((emp: any) => {
       const ventas = emp.creditos_ventas || [];
-      const ventasPendientes = ventas.filter((v: any) => v.estado !== 'pagado');
+      const ventasPendientes = ventas.filter(
+        (v: any) => !ESTADOS_CERRADOS.includes(v.estado),
+      );
       const saldoDeudor = ventasPendientes.reduce(
         (sum: number, v: any) => sum + Number(v.saldo_pendiente || 0),
         0,
       );
-      const totalBateriasDebidas = ventasPendientes.reduce((sum: number, v: any) => {
-        const items = v.venta?.venta_items || [];
-        return sum + items.reduce((iSum: number, item: any) => iSum + (item.cantidad || 0), 0);
-      }, 0);
+      const renglonesPendientes: RenglonCredito[] = ventasPendientes.flatMap(
+        (v: any) => v.venta?.venta_items || [],
+      );
+      const bateriasPorModelo = piezasPorModelo(renglonesPendientes);
+      const totalBateriasDebidas = bateriasPorModelo.reduce(
+        (sum, m) => sum + m.cantidad,
+        0,
+      );
 
-      const hoy = new Date().toISOString().split('T')[0];
+      const hoy = fechaMexico();
       const tieneVencidas = ventasPendientes.some(
         (v: any) => v.fecha_vencimiento && v.fecha_vencimiento < hoy,
       );
@@ -79,6 +195,7 @@ export class CreditosService {
         activo: emp.activo,
         saldo_deudor: Math.round(saldoDeudor * 100) / 100,
         total_baterias_debidas: totalBateriasDebidas,
+        baterias_por_modelo: bateriasPorModelo,
         tiene_vencidas: tieneVencidas,
         ventas_pendientes_count: ventasPendientes.length,
         created_at: emp.created_at,
@@ -170,7 +287,8 @@ export class CreditosService {
             cantidad,
             precio_unitario,
             con_casco,
-            producto:productos(id, modelo, marcas(nombre), requiere_casco)
+            comision_casco,
+            producto:productos(id, modelo, marcas(nombre), requiere_casco, comision_casco, precio)
           )
         )
       `)
@@ -216,12 +334,27 @@ export class CreditosService {
                     modelo: vi.producto.modelo,
                     marca: vi.producto.marcas?.nombre || '',
                     requiere_casco: vi.producto.requiere_casco,
+                    comision_casco: vi.producto.comision_casco,
+                    precio: vi.producto.precio,
                   }
                 : null,
             })),
           }
         : null,
     }));
+
+    // Correcciones hechas a las ventas de la empresa, la más reciente primero.
+    const creditoIds = mappedVentas.map((v: any) => v.id);
+    const { data: ediciones, error: eErr } = creditoIds.length
+      ? await this.client
+          .from('ediciones_credito')
+          .select(
+            'id, credito_venta_id, motivo, antes, despues, total_anterior, total_nuevo, created_at, usuario:usuarios!usuario_id(nombre_completo)',
+          )
+          .in('credito_venta_id', creditoIds)
+          .order('created_at', { ascending: false })
+      : { data: [], error: null };
+    if (eErr) throw new BadRequestException(eErr.message);
 
     const mappedAbonos = (abonos ?? []).map((a: any) => ({
       ...a,
@@ -233,15 +366,31 @@ export class CreditosService {
         : null,
     }));
 
-    const saldoDeudor = (mappedVentas ?? [])
-      .filter((v: any) => v.estado !== 'pagado')
-      .reduce((sum: number, v: any) => sum + Number(v.saldo_pendiente || 0), 0);
+    // Sobre las filas crudas: piezasPorModelo lee la marca del embed `marcas`.
+    const ventasAbiertas = (ventasCredito ?? []).filter(
+      (v: any) => !ESTADOS_CERRADOS.includes(v.estado),
+    );
+    const saldoDeudor = ventasAbiertas.reduce(
+      (sum: number, v: any) => sum + Number(v.saldo_pendiente || 0),
+      0,
+    );
 
     return {
       empresa,
       saldo_deudor: Math.round(saldoDeudor * 100) / 100,
+      baterias_por_modelo: piezasPorModelo(
+        ventasAbiertas.flatMap((v: any) => v.venta?.venta_items ?? []),
+      ),
       ventas: mappedVentas,
       abonos: mappedAbonos,
+      ediciones: ((ediciones ?? []) as unknown as FilaEdicionCredito[]).map(
+        (e) => ({
+          ...e,
+          total_anterior: Number(e.total_anterior),
+          total_nuevo: Number(e.total_nuevo),
+          usuario: primero(e.usuario)?.nombre_completo ?? null,
+        }),
+      ),
     };
   }
 
@@ -272,7 +421,8 @@ export class CreditosService {
             cantidad,
             precio_unitario,
             con_casco,
-            producto:productos(id, modelo, marcas(nombre))
+            comision_casco,
+            producto:productos(id, modelo, marcas(nombre), requiere_casco, comision_casco, precio)
           )
         )
       `)
@@ -288,9 +438,10 @@ export class CreditosService {
     const { data, error } = await query;
     if (error) throw new BadRequestException(error.message);
 
-    const hoy = new Date().toISOString().split('T')[0];
+    const hoy = fechaMexico();
     const items = (data ?? []).map((item: any) => {
-      const vencida = item.estado !== 'pagado' && item.fecha_vencimiento < hoy;
+      const vencida =
+        !ESTADOS_CERRADOS.includes(item.estado) && item.fecha_vencimiento < hoy;
       return {
         ...item,
         es_vencida: vencida,
@@ -310,6 +461,9 @@ export class CreditosService {
                       id: vi.producto.id,
                       modelo: vi.producto.modelo,
                       marca: vi.producto.marcas?.nombre || '',
+                      requiere_casco: vi.producto.requiere_casco,
+                      comision_casco: vi.producto.comision_casco,
+                      precio: vi.producto.precio,
                     }
                   : null,
               })),
@@ -319,6 +473,144 @@ export class CreditosService {
     });
 
     return items;
+  }
+
+  // Corrige cantidades o modelos de una venta a crédito (migración 038).
+  async editarVentaCredito(creditoVentaId: string, dto: EditarVentaCreditoDto) {
+    const { data, error } = (await this.client.rpc('editar_venta_credito', {
+      p_credito_venta_id: creditoVentaId,
+      p_items: dto.items.map((i) => ({
+        producto_id: i.producto_id,
+        cantidad: i.cantidad,
+        precio_unitario: i.precio_unitario,
+        con_casco: i.con_casco ?? null,
+      })),
+      p_motivo: dto.motivo.trim(),
+    })) as { data: unknown; error: PostgrestError | null };
+    if (error) throw new BadRequestException(error.message);
+    return data;
+  }
+
+  // Lo que pasó en un día para el PDF del panel: ventas a crédito, abonos y
+  // traspasos de inventario entre sucursales.
+  async reporteDelDia(dto: ReporteCreditosDiaDto) {
+    const fecha = dto.fecha ?? fechaMexico();
+    const { inicio, fin } = rangoDiaMexico(fecha);
+
+    let creditosQuery = this.client
+      .from('creditos_ventas')
+      .select(
+        `id, monto_total, saldo_pendiente, estado, folio_vale, recibido_por, vehiculo_placas, created_at,
+         empresa:empresas_credito(nombre),
+         sucursal:sucursales(nombre),
+         venta:ventas(folio, usuario:usuarios!usuario_id(nombre_completo),
+           venta_items(cantidad, precio_unitario, con_casco, producto:productos(modelo, marcas(nombre))))`,
+      )
+      .gte('created_at', inicio)
+      .lte('created_at', fin)
+      .neq('estado', 'cancelado')
+      .order('created_at');
+    let abonosQuery = this.client
+      .from('creditos_abonos')
+      .select(
+        'id, monto, metodo_pago, referencia, created_at, empresa:empresas_credito(nombre), sucursal:sucursales(nombre), usuario:usuarios!usuario_id(nombre_completo)',
+      )
+      .gte('created_at', inicio)
+      .lte('created_at', fin)
+      .order('created_at');
+    let traspasosQuery = this.client
+      .from('transferencias')
+      .select(
+        'id, cantidad, nota, created_at, producto:productos(modelo, marcas(nombre)), origen:sucursales!transferencias_sucursal_origen_id_fkey(nombre), destino:sucursales!transferencias_sucursal_destino_id_fkey(nombre), autorizo:usuarios!transferencias_autorizado_por_fkey(nombre_completo)',
+      )
+      .gte('created_at', inicio)
+      .lte('created_at', fin)
+      .order('created_at');
+
+    if (dto.sucursal_id) {
+      creditosQuery = creditosQuery.eq('sucursal_id', dto.sucursal_id);
+      abonosQuery = abonosQuery.eq('sucursal_id', dto.sucursal_id);
+      traspasosQuery = traspasosQuery.or(
+        `sucursal_origen_id.eq.${dto.sucursal_id},sucursal_destino_id.eq.${dto.sucursal_id}`,
+      );
+    }
+
+    const [creditos, abonos, traspasos] = await Promise.all([
+      creditosQuery,
+      abonosQuery,
+      traspasosQuery,
+    ]);
+    if (creditos.error) throw new BadRequestException(creditos.error.message);
+    if (abonos.error) throw new BadRequestException(abonos.error.message);
+    if (traspasos.error) throw new BadRequestException(traspasos.error.message);
+
+    const filasCreditos = (creditos.data ?? []) as unknown as FilaCreditoDia[];
+    const filasAbonos = (abonos.data ?? []) as unknown as FilaAbonoDia[];
+    const filasTraspasos = (traspasos.data ?? []) as unknown as FilaTraspasoDia[];
+
+    const listaCreditos = filasCreditos.map((c) => {
+      const venta = primero(c.venta);
+      const items = (venta?.venta_items ?? []).map((i) => ({
+        ...marcaYModelo(i.producto),
+        cantidad: i.cantidad,
+        precio_unitario: Number(i.precio_unitario),
+        con_casco: i.con_casco,
+      }));
+      return {
+        id: c.id,
+        folio: venta?.folio ?? null,
+        empresa: primero(c.empresa)?.nombre ?? null,
+        sucursal: primero(c.sucursal)?.nombre ?? null,
+        atendio: primero(venta?.usuario)?.nombre_completo ?? null,
+        folio_vale: c.folio_vale,
+        recibido_por: c.recibido_por,
+        vehiculo_placas: c.vehiculo_placas,
+        total: Number(c.monto_total),
+        saldo_pendiente: Number(c.saldo_pendiente),
+        estado: c.estado,
+        piezas: items.reduce((s, i) => s + i.cantidad, 0),
+        items,
+        created_at: c.created_at,
+      };
+    });
+
+    const listaAbonos = filasAbonos.map((a) => ({
+      id: a.id,
+      empresa: primero(a.empresa)?.nombre ?? null,
+      sucursal: primero(a.sucursal)?.nombre ?? null,
+      usuario: primero(a.usuario)?.nombre_completo ?? null,
+      monto: Number(a.monto),
+      metodo_pago: a.metodo_pago,
+      referencia: a.referencia,
+      created_at: a.created_at,
+    }));
+
+    const listaTraspasos = filasTraspasos.map((t) => ({
+      id: t.id,
+      ...marcaYModelo(t.producto),
+      cantidad: t.cantidad,
+      origen: primero(t.origen)?.nombre ?? null,
+      destino: primero(t.destino)?.nombre ?? null,
+      autorizo: primero(t.autorizo)?.nombre_completo ?? null,
+      nota: t.nota,
+      created_at: t.created_at,
+    }));
+
+    return {
+      fecha,
+      creditos: listaCreditos,
+      abonos: listaAbonos,
+      traspasos: listaTraspasos,
+      totales: {
+        creditos: listaCreditos.length,
+        monto_creditos: redondear(listaCreditos.reduce((s, c) => s + c.total, 0)),
+        piezas_credito: listaCreditos.reduce((s, c) => s + c.piezas, 0),
+        abonos: listaAbonos.length,
+        monto_abonos: redondear(listaAbonos.reduce((s, a) => s + a.monto, 0)),
+        traspasos: listaTraspasos.length,
+        piezas_traspasadas: listaTraspasos.reduce((s, t) => s + t.cantidad, 0),
+      },
+    };
   }
 
   // 6. Registrar Abono / Pago de Crédito

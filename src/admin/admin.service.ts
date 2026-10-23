@@ -10,8 +10,9 @@ import {
   AltasReporteDto,
   VentasReporteDto,
 } from './admin.dto';
-
-const TZ_MEXICO = 'America/Mexico_City';
+import { rangoDiaMexico } from '../common/fechas';
+import { totalesPorGrupo } from '../common/pagos';
+import { primero, type Relacion } from '../common/relaciones';
 
 interface FilaSucursal {
   id: string;
@@ -60,6 +61,15 @@ interface FilaItemVenta {
   } | null;
 }
 
+interface ResumenCaja {
+  efectivo?: { ventas?: number; esperado?: number };
+  electronico?: {
+    total?: number;
+    total_tarjetas?: number;
+    total_transferencias?: number;
+  };
+}
+
 interface FilaCorte {
   id: string;
   sucursal_id: string;
@@ -91,31 +101,8 @@ export class AdminService {
     }
   }
 
-  // Rango de un día en México (UTC-6 fijo; México no usa horario de verano
-  // desde 2022). Si `fecha` viene, se usa esa fecha (YYYY-MM-DD); si no,
-  // el día de hoy en hora local de México.
-  // 00:00:00 hora local CDMX = 06:00:00 UTC
-  // 23:59:59.999 hora local CDMX = 05:59:59.999 UTC del día siguiente
   private rangoDiaMexico(fecha?: string): { inicio: string; fin: string } {
-    let ymd: string;
-    if (fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-      ymd = fecha;
-    } else {
-      const base = fecha ? new Date(fecha) : new Date();
-      const partes = new Intl.DateTimeFormat('en-CA', {
-        timeZone: TZ_MEXICO,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).formatToParts(base);
-      const y = partes.find((p) => p.type === 'year')?.value;
-      const m = partes.find((p) => p.type === 'month')?.value;
-      const d = partes.find((p) => p.type === 'day')?.value;
-      ymd = `${y}-${m}-${d}`;
-    }
-    const inicio = new Date(`${ymd}T06:00:00.000Z`);
-    const fin = new Date(inicio.getTime() + 86_400_000 - 1);
-    return { inicio: inicio.toISOString(), fin: fin.toISOString() };
+    return rangoDiaMexico(fecha);
   }
 
   async dashboard() {
@@ -167,26 +154,29 @@ export class AdminService {
       ).map((u) => [u.id, u.nombre_completo]),
     );
 
-    // Ventas activas ligadas a los cortes abiertos, para el monto esperado.
-    const corteIds = cortes.map((c) => c.id);
-    const ventasPorCorte = new Map<string, number>();
-    if (corteIds.length > 0) {
-      const { data, error } = await this.client
-        .from('ventas')
-        .select('corte_caja_id, total')
-        .eq('estado', 'activa')
-        .in('corte_caja_id', corteIds);
-      this.throwIfError(error);
-      for (const v of (data ?? []) as Array<{
-        corte_caja_id: string;
-        total: number;
-      }>) {
-        ventasPorCorte.set(
-          v.corte_caja_id,
-          (ventasPorCorte.get(v.corte_caja_id) ?? 0) + Number(v.total),
-        );
-      }
-    }
+    // Resumen de cada caja abierta: el efectivo esperado en el cajón va
+    // separado de lo cobrado con tarjeta y transferencia (037).
+    const resumenPorCorte = new Map<string, ResumenCaja>();
+    await Promise.all(
+      cortes.map(async (c) => {
+        const { data, error } = await this.client.rpc('resumen_corte', {
+          p_corte_id: c.id,
+        });
+        this.throwIfError(error);
+        resumenPorCorte.set(c.id, data as ResumenCaja);
+      }),
+    );
+    const cajaDe = (corteId: string) => {
+      const r = resumenPorCorte.get(corteId);
+      const efectivoVentas = Number(r?.efectivo?.ventas ?? 0);
+      const electronico = Number(r?.electronico?.total ?? 0);
+      return {
+        total_ventas: efectivoVentas + electronico,
+        efectivo_esperado: Number(r?.efectivo?.esperado ?? 0),
+        total_tarjetas: Number(r?.electronico?.total_tarjetas ?? 0),
+        total_transferencias: Number(r?.electronico?.total_transferencias ?? 0),
+      };
+    };
 
     // Agregación de inventario por sucursal (unidades y valor a precio vigente).
     const invPorSucursal = new Map<
@@ -222,7 +212,7 @@ export class AdminService {
       const ventas = ventasHoyPorSucursal.get(s.id) ?? { n: 0, monto: 0 };
       const inv = invPorSucursal.get(s.id) ?? { unidades: 0, valor: 0 };
       const corte = cortes.find((c) => c.sucursal_id === s.id) ?? null;
-      const totalCorte = corte ? (ventasPorCorte.get(corte.id) ?? 0) : 0;
+      const caja = corte ? cajaDe(corte.id) : null;
       return {
         sucursal_id: s.id,
         nombre: s.nombre,
@@ -231,15 +221,19 @@ export class AdminService {
         monto_ventas_hoy: ventas.monto,
         unidades_inventario: inv.unidades,
         valor_inventario: inv.valor,
-        caja: corte
-          ? {
-              corte_id: corte.id,
-              usuario_id: corte.usuario_id,
-              monto_inicial: Number(corte.monto_inicial),
-              total_ventas: totalCorte,
-              monto_esperado: Number(corte.monto_inicial) + totalCorte,
-            }
-          : null,
+        caja:
+          corte && caja
+            ? {
+                corte_id: corte.id,
+                usuario_id: corte.usuario_id,
+                monto_inicial: Number(corte.monto_inicial),
+                total_ventas: caja.total_ventas,
+                // Efectivo que debe haber en el cajón.
+                monto_esperado: caja.efectivo_esperado,
+                total_tarjetas: caja.total_tarjetas,
+                total_transferencias: caja.total_transferencias,
+              }
+            : null,
       };
     });
 
@@ -256,7 +250,7 @@ export class AdminService {
       ),
       cajas_abiertas: cortes.length,
       valor_esperado_cajas: cortes.reduce(
-        (s, c) => s + Number(c.monto_inicial) + (ventasPorCorte.get(c.id) ?? 0),
+        (s, c) => s + cajaDe(c.id).efectivo_esperado,
         0,
       ),
     };
@@ -294,7 +288,7 @@ export class AdminService {
     const [resSucursales, resUsuarios] = await Promise.all([
       this.client
         .from('sucursales')
-        .select('id, nombre, es_matriz, direccion, created_at')
+        .select('id, nombre, clave, es_matriz, direccion, created_at')
         .order('nombre'),
       this.client
         .from('usuarios')
@@ -317,6 +311,7 @@ export class AdminService {
     const sucursales = (resSucursales.data ?? []) as Array<{
       id: string;
       nombre: string;
+      clave: string;
       es_matriz: boolean;
       direccion: string | null;
       created_at: string;
@@ -345,8 +340,10 @@ export class AdminService {
         nombre: dto.nombre.trim(),
         es_matriz: esMatriz,
         direccion: dto.direccion?.trim() || null,
+        // Sin clave, la base propone una a partir del nombre.
+        ...(dto.clave ? { clave: dto.clave.trim().toUpperCase() } : {}),
       })
-      .select('id, nombre, es_matriz, direccion, created_at')
+      .select('id, nombre, clave, es_matriz, direccion, created_at')
       .single();
 
     this.throwIfError(error);
@@ -374,6 +371,10 @@ export class AdminService {
     if (dto.direccion !== undefined) {
       cambios.direccion = dto.direccion.trim() || null;
     }
+    // La base rechaza el cambio si la sucursal ya emitió folios con su clave.
+    if (dto.clave !== undefined) {
+      cambios.clave = dto.clave.trim().toUpperCase();
+    }
     if (dto.es_matriz !== undefined) {
       cambios.es_matriz = dto.es_matriz;
       if (dto.es_matriz) {
@@ -394,7 +395,7 @@ export class AdminService {
       .from('sucursales')
       .update(cambios)
       .eq('id', id)
-      .select('id, nombre, es_matriz, direccion, created_at')
+      .select('id, nombre, clave, es_matriz, direccion, created_at')
       .single();
 
     this.throwIfError(error);
@@ -592,7 +593,10 @@ export class AdminService {
         ),
       ];
       if (ids.length === 0) {
-        return { ventas: [], totales: { ventas: 0, monto: 0, unidades: 0 } };
+        return {
+          ventas: [],
+          totales: { ventas: 0, monto: 0, unidades: 0, por_grupo: totalesPorGrupo([]) },
+        };
       }
       query = query.in('id', ids);
     }
@@ -602,7 +606,10 @@ export class AdminService {
     const ventas = (data ?? []) as FilaVenta[];
 
     if (ventas.length === 0) {
-      return { ventas: [], totales: { ventas: 0, monto: 0, unidades: 0 } };
+      return {
+          ventas: [],
+          totales: { ventas: 0, monto: 0, unidades: 0, por_grupo: totalesPorGrupo([]) },
+        };
     }
 
     const ventaIds = ventas.map((v) => v.id);
@@ -668,9 +675,16 @@ export class AdminService {
       };
     });
 
+    // por_grupo separa lo cobrado (efectivo, tarjeta, transferencia; el pago
+    // mixto repartido) de lo vendido a crédito, que no entra a ninguna caja.
     return {
       ventas: detalle,
-      totales: { ventas: ventas.length, monto, unidades },
+      totales: {
+        ventas: ventas.length,
+        monto,
+        unidades,
+        por_grupo: totalesPorGrupo(ventas),
+      },
     };
   }
 
@@ -925,6 +939,65 @@ export class AdminService {
       totales: { reimpresiones: reimpresiones.length },
     };
   }
+
+  // Tickets cancelados: quién la pidió, qué administrador la autorizó y por qué.
+  async reporteCancelaciones(dto: VentasReporteDto) {
+    let query = this.client
+      .from('ventas')
+      .select(
+        'id, folio, total, metodo_pago, created_at, cancelled_at, motivo_cancelacion, sucursales(nombre), solicitante:usuarios!ventas_cancelacion_solicitada_por_fkey(nombre_completo), autorizador:usuarios!ventas_cancelled_by_fkey(nombre_completo)',
+      )
+      .eq('estado', 'cancelada')
+      .order('cancelled_at', { ascending: false })
+      .limit(1000);
+
+    if (dto.fecha_desde) {
+      query = query.gte('cancelled_at', this.rangoDiaMexico(dto.fecha_desde).inicio);
+    }
+    if (dto.fecha_hasta) {
+      query = query.lte('cancelled_at', this.rangoDiaMexico(dto.fecha_hasta).fin);
+    }
+    if (dto.sucursal_id) query = query.eq('sucursal_id', dto.sucursal_id);
+
+    const { data, error } = await query;
+    this.throwIfError(error);
+
+    const cancelaciones = ((data ?? []) as unknown as FilaCancelacion[]).map(
+      (v) => ({
+        id: v.id,
+        folio: v.folio,
+        total: Number(v.total),
+        metodo_pago: v.metodo_pago ?? 'efectivo',
+        vendida_en: v.created_at,
+        cancelada_en: v.cancelled_at,
+        motivo: v.motivo_cancelacion,
+        sucursal: primero(v.sucursales)?.nombre ?? null,
+        solicito: primero(v.solicitante)?.nombre_completo ?? null,
+        autorizo: primero(v.autorizador)?.nombre_completo ?? null,
+      }),
+    );
+
+    return {
+      cancelaciones,
+      totales: {
+        cancelaciones: cancelaciones.length,
+        monto: cancelaciones.reduce((s, c) => s + c.total, 0),
+      },
+    };
+  }
+}
+
+interface FilaCancelacion {
+  id: string;
+  folio: string;
+  total: number;
+  metodo_pago: string | null;
+  created_at: string;
+  cancelled_at: string | null;
+  motivo_cancelacion: string | null;
+  sucursales: Relacion<{ nombre: string }>;
+  solicitante: Relacion<{ nombre_completo: string }>;
+  autorizador: Relacion<{ nombre_completo: string }>;
 }
 
 interface FilaReimpresion {

@@ -145,6 +145,36 @@ export class RegistrarVentaDto {
   desglose_pago?: PagoParcialDto[];
 }
 
+// Clave del administrador que autoriza en caja una operación sensible
+// (reimprimir, cancelar, devolver una batería).
+export class AutorizacionAdministradorDto {
+  @IsEmail({}, { message: 'El correo del administrador no es válido' })
+  email!: string;
+
+  @IsString()
+  @MinLength(6, { message: 'La contraseña de autorización es muy corta' })
+  password!: string;
+}
+
+export class CancelarTicketDto extends AutorizacionAdministradorDto {
+  @IsString()
+  @MinLength(4, { message: 'Escribe el folio de la venta' })
+  @MaxLength(40)
+  folio!: string;
+
+  @IsString()
+  @MinLength(4, { message: 'Escribe por qué se cancela' })
+  @MaxLength(200)
+  motivo!: string;
+}
+
+export class CancelarVentaDto {
+  @IsString()
+  @MinLength(4, { message: 'Escribe por qué se cancela' })
+  @MaxLength(200)
+  motivo!: string;
+}
+
 export class ReimprimirTicketDto {
   @IsString()
   @MinLength(4, { message: 'Escribe el folio de la venta' })

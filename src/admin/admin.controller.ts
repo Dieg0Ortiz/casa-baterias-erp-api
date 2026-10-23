@@ -82,6 +82,12 @@ export class AdminController {
     return this.adminService.reporteReimpresiones(dto);
   }
 
+  @Roles('administrador')
+  @Get('reportes/cancelaciones')
+  reporteCancelaciones(@Query() dto: VentasReporteDto) {
+    return this.adminService.reporteCancelaciones(dto);
+  }
+
   // Listado de usuarios/empleados del sistema. Solo administrador.
   @Roles('administrador')
   @Get('usuarios')

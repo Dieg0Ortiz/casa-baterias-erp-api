@@ -7,7 +7,17 @@ import { PostgrestError } from '@supabase/supabase-js';
 import { AuthService } from '../auth/auth.service';
 import type { UsuarioAutenticado } from '../common/guards/jwt-auth.guard';
 import { SupabaseService } from '../supabase/supabase.service';
-import { RegistrarVentaDto, ReimprimirTicketDto } from './sales.dto';
+import {
+  CancelarTicketDto,
+  CancelarVentaDto,
+  RegistrarVentaDto,
+  ReimprimirTicketDto,
+} from './sales.dto';
+
+/** Los folios se imprimen en mayúsculas; el cajero puede teclearlos como sea. */
+export function normalizarFolio(folio: string): string {
+  return folio.trim().toUpperCase();
+}
 
 type RpcResult = {
   data: unknown;
@@ -92,6 +102,81 @@ export class SalesService {
     return data as Venta[];
   }
 
+  // Cancelación pedida desde la caja: el trabajador da el folio y un
+  // administrador escribe su clave. La venta se busca con la sesión del
+  // trabajador (RLS: solo su sucursal) y cancelar_venta corre con la del
+  // administrador, que es quien la autoriza en la base.
+  async cancelarDesdeCaja(
+    solicitante: UsuarioAutenticado,
+    dto: CancelarTicketDto,
+  ) {
+    const folio = normalizarFolio(dto.folio);
+    const { data, error } = await this.client
+      .from('ventas')
+      .select('id')
+      .eq('folio', folio)
+      .maybeSingle();
+    this.throwIfError(error);
+    const venta: { id: string } | null = data;
+    if (!venta) {
+      throw new NotFoundException(
+        'No hay una venta con ese folio en tu sucursal',
+      );
+    }
+
+    return this.auth.conAdministrador(dto.email, dto.password, (admin) =>
+      this.cancelar(
+        venta.id,
+        dto.motivo,
+        solicitante.userId,
+        admin.nombre_completo,
+      ),
+    );
+  }
+
+  // Cancelación desde el panel: el administrador ya está en sesión.
+  cancelarPorAdministrador(
+    administrador: UsuarioAutenticado,
+    ventaId: string,
+    dto: CancelarVentaDto,
+  ) {
+    return this.cancelar(
+      ventaId,
+      dto.motivo,
+      administrador.userId,
+      administrador.perfil.nombre_completo,
+    );
+  }
+
+  private async cancelar(
+    ventaId: string,
+    motivo: string,
+    solicitadoPor: string,
+    autorizo: string,
+  ) {
+    const { data, error } = await this.rpc('cancelar_venta', {
+      p_venta_id: ventaId,
+      p_motivo: motivo.trim(),
+      p_solicitado_por: solicitadoPor,
+    });
+    if (error) {
+      throw new BadRequestException(this.mensajeRpc(error));
+    }
+    const venta = data as Venta & {
+      motivo_cancelacion: string;
+      cancelled_at: string;
+    };
+    return {
+      id: venta.id,
+      folio: venta.folio,
+      total: Number(venta.total),
+      estado: venta.estado,
+      motivo: venta.motivo_cancelacion,
+      cancelada_en: venta.cancelled_at,
+      autorizo,
+    };
+  }
+
   // Reimprime un ticket ya cobrado. Exige la clave de un administrador,
   // deja el hecho registrado y devuelve los datos para un papel marcado
   // como reimpresión. No vuelve a cobrar ni mueve inventario.
@@ -100,7 +185,7 @@ export class SalesService {
       dto.email,
       dto.password,
     );
-    const folio = dto.folio.trim();
+    const folio = normalizarFolio(dto.folio);
 
     const { data: venta, error: errorVenta } = await this.client
       .from('ventas')

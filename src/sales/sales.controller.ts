@@ -1,9 +1,22 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
 import type { UsuarioAutenticado } from '../common/guards/jwt-auth.guard';
 import { SalesService } from './sales.service';
-import { RegistrarVentaDto, ReimprimirTicketDto } from './sales.dto';
+import {
+  CancelarTicketDto,
+  CancelarVentaDto,
+  RegistrarVentaDto,
+  ReimprimirTicketDto,
+} from './sales.dto';
 
 @Controller('sales')
 export class SalesController {
@@ -21,6 +34,27 @@ export class SalesController {
     @Body() dto: ReimprimirTicketDto,
   ) {
     return this.salesService.reimprimir(user, dto);
+  }
+
+  // Cancelación desde la caja, con la clave de un administrador.
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  @Post('cancelaciones')
+  cancelarDesdeCaja(
+    @CurrentUser() user: UsuarioAutenticado,
+    @Body() dto: CancelarTicketDto,
+  ) {
+    return this.salesService.cancelarDesdeCaja(user, dto);
+  }
+
+  // Cancelación desde el panel.
+  @Roles('administrador')
+  @Post(':id/cancelar')
+  cancelar(
+    @CurrentUser() user: UsuarioAutenticado,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CancelarVentaDto,
+  ) {
+    return this.salesService.cancelarPorAdministrador(user, id, dto);
   }
 
   @Get()

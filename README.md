@@ -46,12 +46,23 @@ Servidor en `http://localhost:3000`. Rutas bajo `/api/v1`.
 
 ## Módulos
 
-- `auth` — login contra Supabase Auth, perfil del usuario
+- `auth` — login contra Supabase Auth, perfil del usuario. `conAdministrador`
+  ejecuta una operación con la sesión del administrador que escribe su clave
+  en caja (reimpresión, cancelación, devolución de batería), para que la base
+  también valide su rol.
 - `catalog` — marcas y productos (Fase 3)
 - `inventory` — inventario y transferencias (Fases 4-5)
-- `sales` — ventas y cancelación (Fase 6)
-- `cash` — cortes de caja (Fase 7)
-- `admin` — dashboard consolidado (Fase 8)
+- `sales` — ventas, reimpresión y cancelación de tickets (Fase 6)
+- `cash` — caja por sucursal: corte de efectivo y corte de tarjetas y
+  transferencias por separado; las ventas a crédito van aparte (Fase 7)
+- `devoluciones` — devoluciones de dinero con folio DEV: depósito de casco y
+  batería devuelta. Salen de la caja abierta y se restan de su corte.
+- `creditos` — empresas con crédito, abonos, corrección de piezas de una venta
+  a crédito y reporte del día (créditos, abonos y traspasos)
+- `admin` — dashboard consolidado y reportes (Fase 8)
+
+Los cálculos de dinero (cortes, folios, devoluciones) viven en funciones de la
+base (`../casa-baterias-erp-backend/migrations`); el API solo las llama.
 
 ## Pruebas
 

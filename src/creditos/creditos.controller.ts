@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -12,7 +13,9 @@ import { CreditosService } from './creditos.service';
 import {
   CrearEmpresaCreditoDto,
   ActualizarEmpresaCreditoDto,
+  EditarVentaCreditoDto,
   RegistrarAbonoCreditoDto,
+  ReporteCreditosDiaDto,
 } from './creditos.dto';
 
 @Controller('creditos')
@@ -59,6 +62,23 @@ export class CreditosController {
     @Query('sucursal_id') sucursalId?: string,
   ) {
     return this.creditosService.listarVentasCredito(estado, sucursalId);
+  }
+
+  // Corregir cantidades o modelos de una venta a crédito
+  @Patch('ventas/:id')
+  @Roles('administrador')
+  editarVentaCredito(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: EditarVentaCreditoDto,
+  ) {
+    return this.creditosService.editarVentaCredito(id, dto);
+  }
+
+  // Créditos, abonos y traspasos de un día (PDF del panel)
+  @Get('reporte-dia')
+  @Roles('administrador')
+  reporteDelDia(@Query() dto: ReporteCreditosDiaDto) {
+    return this.creditosService.reporteDelDia(dto);
   }
 
   // Registrar abono o liquidación de crédito
