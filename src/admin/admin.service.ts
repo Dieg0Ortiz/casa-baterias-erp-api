@@ -10,6 +10,7 @@ import {
   AltasReporteDto,
   VentasReporteDto,
 } from './admin.dto';
+import { porLotes, todasLasPaginas } from '../common/consultas';
 import { rangoDiaMexico } from '../common/fechas';
 import { totalesPorGrupo } from '../common/pagos';
 import { primero, type Relacion } from '../common/relaciones';
@@ -576,72 +577,88 @@ export class AdminService {
   // Reporte de ventas filtrable (Fase 8): por sucursal, rango de fechas,
   // empleado y/o producto. RLS permite al admin leer todo.
   async reporteVentas(dto: VentasReporteDto) {
-    let query = this.client
-      .from('ventas')
-      .select(
-        'id, folio, sucursal_id, usuario_id, total, estado, created_at, metodo_pago, desglose_pago',
-      )
-      .eq('estado', 'activa')
-      .order('created_at', { ascending: false });
+    const sinVentas = {
+      ventas: [],
+      totales: {
+        ventas: 0,
+        monto: 0,
+        unidades: 0,
+        por_grupo: totalesPorGrupo([]),
+      },
+    };
 
-    if (dto.sucursal_id) {
-      query = query.eq('sucursal_id', dto.sucursal_id);
-    }
-    if (dto.usuario_id) {
-      query = query.eq('usuario_id', dto.usuario_id);
-    }
-    if (dto.fecha_desde) {
-      query = query.gte(
-        'created_at',
-        this.rangoDiaMexico(dto.fecha_desde).inicio,
+    // Los filtros se arman de nuevo para cada página y cada lote.
+    const consultaVentas = () => {
+      let query = this.client
+        .from('ventas')
+        .select(
+          'id, folio, sucursal_id, usuario_id, total, estado, created_at, metodo_pago, desglose_pago',
+        )
+        .eq('estado', 'activa');
+      if (dto.sucursal_id) {
+        query = query.eq('sucursal_id', dto.sucursal_id);
+      }
+      if (dto.usuario_id) {
+        query = query.eq('usuario_id', dto.usuario_id);
+      }
+      if (dto.fecha_desde) {
+        query = query.gte(
+          'created_at',
+          this.rangoDiaMexico(dto.fecha_desde).inicio,
+        );
+      }
+      if (dto.fecha_hasta) {
+        query = query.lte(
+          'created_at',
+          this.rangoDiaMexico(dto.fecha_hasta).fin,
+        );
+      }
+      return query;
+    };
+
+    let ventas: FilaVenta[];
+    if (dto.producto_id) {
+      const productoId = dto.producto_id;
+      const items = await todasLasPaginas<{ venta_id: string }>(
+        (desde, hasta) =>
+          this.client
+            .from('venta_items')
+            .select('venta_id')
+            .eq('producto_id', productoId)
+            .order('id')
+            .range(desde, hasta),
+      );
+      const ids = [...new Set(items.map((i) => i.venta_id))];
+      if (ids.length === 0) return sinVentas;
+      ventas = await porLotes<FilaVenta>(ids, (lote, desde, hasta) =>
+        consultaVentas().in('id', lote).order('id').range(desde, hasta),
+      );
+    } else {
+      ventas = await todasLasPaginas<FilaVenta>((desde, hasta) =>
+        consultaVentas()
+          .order('created_at', { ascending: false })
+          .order('id')
+          .range(desde, hasta),
       );
     }
-    if (dto.fecha_hasta) {
-      query = query.lte('created_at', this.rangoDiaMexico(dto.fecha_hasta).fin);
-    }
-    if (dto.producto_id) {
-      const { data: items, error } = await this.client
-        .from('venta_items')
-        .select('venta_id')
-        .eq('producto_id', dto.producto_id);
-      this.throwIfError(error);
-      const ids = [
-        ...new Set(
-          ((items ?? []) as Array<{ venta_id: string }>).map((i) => i.venta_id),
-        ),
-      ];
-      if (ids.length === 0) {
-        return {
-          ventas: [],
-          totales: { ventas: 0, monto: 0, unidades: 0, por_grupo: totalesPorGrupo([]) },
-        };
-      }
-      query = query.in('id', ids);
-    }
-
-    const { data, error } = await query;
-    this.throwIfError(error);
-    const ventas = (data ?? []) as FilaVenta[];
-
-    if (ventas.length === 0) {
-      return {
-          ventas: [],
-          totales: { ventas: 0, monto: 0, unidades: 0, por_grupo: totalesPorGrupo([]) },
-        };
-    }
+    if (ventas.length === 0) return sinVentas;
+    ventas.sort((a, b) => b.created_at.localeCompare(a.created_at));
 
     const ventaIds = ventas.map((v) => v.id);
-    const [resItems, resSucursales, resUsuarios] = await Promise.all([
-      this.client
-        .from('venta_items')
-        .select(
-          'venta_id, cantidad, precio_unitario, tipo_precio, con_casco, comision_casco, productos(modelo, marcas(nombre))',
-        )
-        .in('venta_id', ventaIds),
+    const [items, resSucursales, resUsuarios] = await Promise.all([
+      porLotes<FilaItemVenta>(ventaIds, (lote, desde, hasta) =>
+        this.client
+          .from('venta_items')
+          .select(
+            'id, venta_id, cantidad, precio_unitario, tipo_precio, con_casco, comision_casco, productos(modelo, marcas(nombre))',
+          )
+          .in('venta_id', lote)
+          .order('id')
+          .range(desde, hasta),
+      ),
       this.client.from('sucursales').select('id, nombre'),
       this.client.from('usuarios').select('id, nombre_completo'),
     ]);
-    this.throwIfError(resItems.error);
     this.throwIfError(resSucursales.error);
     this.throwIfError(resUsuarios.error);
 
@@ -660,7 +677,7 @@ export class AdminService {
     );
 
     const itemsPorVenta = new Map<string, FilaItemVenta[]>();
-    for (const item of (resItems.data ?? []) as unknown as FilaItemVenta[]) {
+    for (const item of items) {
       const lista = itemsPorVenta.get(item.venta_id) ?? [];
       lista.push(item);
       itemsPorVenta.set(item.venta_id, lista);
@@ -711,13 +728,7 @@ export class AdminService {
   // ------------------------------------------------------------------
 
   async listarCascosPendientes() {
-    const { data, error } = await this.client
-      .from('cascos_pendientes')
-      .select('*')
-      .order('created_at', { ascending: false });
-    this.throwIfError(error);
-
-    const cascos = (data ?? []) as Array<{
+    const cascos = await todasLasPaginas<{
       id: string;
       venta_id: string;
       venta_item_id: string;
@@ -734,7 +745,14 @@ export class AdminService {
       resuelto_por: string | null;
       resuelto_en: string | null;
       created_at: string;
-    }>;
+    }>((desde, hasta) =>
+      this.client
+        .from('cascos_pendientes')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .order('id')
+        .range(desde, hasta),
+    );
 
     if (cascos.length === 0) return [];
 
@@ -748,16 +766,28 @@ export class AdminService {
     ];
     const sucursalIds = [...new Set(cascos.map((c) => c.sucursal_id))];
 
-    const [resVentas, resProductos, resSucursales, resUsuarios] =
+    const [ventasCasco, productosCasco, resSucursales, resUsuarios] =
       await Promise.all([
-        this.client
-          .from('ventas')
-          .select('id, folio')
-          .in('id', ventaIds),
-        this.client
-          .from('productos')
-          .select('id, modelo, comision_casco')
-          .in('id', productoIds),
+        porLotes<{ id: string; folio: string }>(
+          ventaIds,
+          (lote, desde, hasta) =>
+            this.client
+              .from('ventas')
+              .select('id, folio')
+              .in('id', lote)
+              .order('id')
+              .range(desde, hasta),
+        ),
+        porLotes<{ id: string; modelo: string; comision_casco: number | null }>(
+          productoIds,
+          (lote, desde, hasta) =>
+            this.client
+              .from('productos')
+              .select('id, modelo, comision_casco')
+              .in('id', lote)
+              .order('id')
+              .range(desde, hasta),
+        ),
         this.client
           .from('sucursales')
           .select('id, nombre')
@@ -765,20 +795,8 @@ export class AdminService {
         this.client.from('usuarios').select('id, nombre_completo'),
       ]);
 
-    const folioVenta = new Map(
-      ((resVentas.data ?? []) as Array<{ id: string; folio: string }>).map(
-        (v) => [v.id, v.folio],
-      ),
-    );
-    const nombreProducto = new Map(
-      (
-        (resProductos.data ?? []) as Array<{
-          id: string;
-          modelo: string;
-          comision_casco: number | null;
-        }>
-      ).map((p) => [p.id, p.modelo]),
-    );
+    const folioVenta = new Map(ventasCasco.map((v) => [v.id, v.folio]));
+    const nombreProducto = new Map(productosCasco.map((p) => [p.id, p.modelo]));
     const nombreSucursal = new Map(
       ((resSucursales.data ?? []) as Array<{ id: string; nombre: string }>).map(
         (s) => [s.id, s.nombre],
