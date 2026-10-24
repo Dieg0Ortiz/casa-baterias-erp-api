@@ -8,6 +8,7 @@ import {
   type ProductoConMarca,
   type Relacion,
 } from '../common/relaciones';
+import { todasLasPaginas } from '../common/consultas';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
   CrearEmpresaCreditoDto,
@@ -396,47 +397,50 @@ export class CreditosService {
 
   // 5. Reporte General de Todas las Cuentas por Cobrar (Ventas a Crédito)
   async listarVentasCredito(estado?: string, sucursalId?: string) {
-    let query = this.client
-      .from('creditos_ventas')
-      .select(`
-        id,
-        monto_total,
-        saldo_pendiente,
-        fecha_vencimiento,
-        recibido_por,
-        vehiculo_placas,
-        folio_vale,
-        estado,
-        created_at,
-        empresa:empresas_credito(id, nombre, rfc, telefono, dias_credito),
-        sucursal:sucursales(id, nombre),
-        venta:ventas(
+    const armar = () => {
+      let query = this.client
+        .from('creditos_ventas')
+        .select(`
           id,
-          folio,
+          monto_total,
+          saldo_pendiente,
+          fecha_vencimiento,
+          recibido_por,
+          vehiculo_placas,
+          folio_vale,
+          estado,
           created_at,
-          total,
-          usuario:usuarios!usuario_id(id, nombre_completo),
-          venta_items(
+          empresa:empresas_credito(id, nombre, rfc, telefono, dias_credito),
+          sucursal:sucursales(id, nombre),
+          venta:ventas(
             id,
-            cantidad,
-            precio_unitario,
-            con_casco,
-            comision_casco,
-            producto:productos(id, modelo, marcas(nombre), requiere_casco, comision_casco, precio)
+            folio,
+            created_at,
+            total,
+            usuario:usuarios!usuario_id(id, nombre_completo),
+            venta_items(
+              id,
+              cantidad,
+              precio_unitario,
+              con_casco,
+              comision_casco,
+              producto:productos(id, modelo, marcas(nombre), requiere_casco, comision_casco, precio)
+            )
           )
-        )
-      `)
-      .order('fecha_vencimiento', { ascending: true });
+        `)
+        .order('fecha_vencimiento', { ascending: true });
 
-    if (estado) {
-      query = query.eq('estado', estado);
-    }
-    if (sucursalId) {
-      query = query.eq('sucursal_id', sucursalId);
-    }
-
-    const { data, error } = await query;
-    if (error) throw new BadRequestException(error.message);
+      if (estado) {
+        query = query.eq('estado', estado);
+      }
+      if (sucursalId) {
+        query = query.eq('sucursal_id', sucursalId);
+      }
+      return query;
+    };
+    const data = await todasLasPaginas<unknown>((desde, hasta) =>
+      armar().order('id').range(desde, hasta),
+    );
 
     const hoy = fechaMexico();
     const items = (data ?? []).map((item: any) => {

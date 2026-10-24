@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
+import { todasLasPaginas } from '../common/consultas';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
   ActualizarMarcaDto,
@@ -104,14 +105,16 @@ export class CatalogService {
   async listarProductos() {
     // La lectura de inventario aplica RLS: el trabajador solo ve la
     // existencia de su sucursal; el administrador ve todas.
-    const { data, error } = await this.client
-      .from('productos')
-      .select(
-        'id, modelo, descripcion, precio, precio_2, precio_3, precio_compra, comision_casco, requiere_casco, codigo_barras, codigo_barras_origen, activo, marcas(nombre), inventario(cantidad, cascos_disponibles, sucursal_id)',
-      )
-      .order('modelo');
-    this.throwIfError(error);
-    return data;
+    return todasLasPaginas((desde, hasta) =>
+      this.client
+        .from('productos')
+        .select(
+          'id, modelo, descripcion, precio, precio_2, precio_3, precio_compra, comision_casco, requiere_casco, codigo_barras, codigo_barras_origen, activo, marcas(nombre), inventario(cantidad, cascos_disponibles, sucursal_id)',
+        )
+        .order('modelo')
+        .order('id')
+        .range(desde, hasta),
+    );
   }
 
   async crearProducto(dto: CrearProductoDto) {

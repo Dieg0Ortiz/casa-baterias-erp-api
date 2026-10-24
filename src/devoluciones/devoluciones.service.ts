@@ -18,6 +18,7 @@ import {
   type Relacion,
 } from '../common/relaciones';
 import { normalizarFolio } from '../sales/sales.service';
+import { todasLasPaginas } from '../common/consultas';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
   ConsultaDepositosDto,
@@ -280,54 +281,55 @@ export class DevolucionesService {
 
   // Lista para el reporte. RLS limita al trabajador a su sucursal.
   async listar(dto: ConsultaDevolucionesDto) {
-    let consulta = this.client
-      .from('devoluciones')
-      .select(
-        'id, folio, tipo, monto, metodo_reembolso, motivo, cliente_nombre, created_at, sucursales(nombre), ventas(folio), solicitante:usuarios!devoluciones_solicitado_por_fkey(nombre_completo), autorizador:usuarios!devoluciones_autorizado_por_fkey(nombre_completo), devolucion_items(cantidad, monto, reingresa_inventario, productos(modelo, marcas(nombre)))',
-      )
-      .order('created_at', { ascending: false })
-      .limit(2000);
+    const armar = () => {
+      let consulta = this.client
+        .from('devoluciones')
+        .select(
+          'id, folio, tipo, monto, metodo_reembolso, motivo, cliente_nombre, created_at, sucursales(nombre), ventas(folio), solicitante:usuarios!devoluciones_solicitado_por_fkey(nombre_completo), autorizador:usuarios!devoluciones_autorizado_por_fkey(nombre_completo), devolucion_items(cantidad, monto, reingresa_inventario, productos(modelo, marcas(nombre)))',
+        )
+        .order('created_at', { ascending: false });
 
-    if (dto.sucursal_id) consulta = consulta.eq('sucursal_id', dto.sucursal_id);
-    if (dto.tipo) consulta = consulta.eq('tipo', dto.tipo);
-    if (dto.fecha_desde) {
-      consulta = consulta.gte(
-        'created_at',
-        rangoDiaMexico(dto.fecha_desde).inicio,
-      );
-    }
-    if (dto.fecha_hasta) {
-      consulta = consulta.lte(
-        'created_at',
-        rangoDiaMexico(dto.fecha_hasta).fin,
-      );
-    }
-
-    const { data, error } = await consulta;
-    this.throwIfError(error);
-
-    const devoluciones = ((data ?? []) as unknown as FilaDevolucion[]).map(
-      (d) => ({
-        id: d.id,
-        folio: d.folio,
-        tipo: d.tipo,
-        monto: Number(d.monto),
-        metodo_reembolso: d.metodo_reembolso,
-        motivo: d.motivo,
-        cliente_nombre: d.cliente_nombre,
-        created_at: d.created_at,
-        sucursal: primero(d.sucursales)?.nombre ?? null,
-        venta_folio: primero(d.ventas)?.folio ?? null,
-        atendio: primero(d.solicitante)?.nombre_completo ?? null,
-        autorizo: primero(d.autorizador)?.nombre_completo ?? null,
-        items: (d.devolucion_items ?? []).map((i) => ({
-          ...marcaYModelo(i.productos),
-          cantidad: i.cantidad,
-          monto: Number(i.monto),
-          reingresa_inventario: i.reingresa_inventario,
-        })),
-      }),
+      if (dto.sucursal_id)
+        consulta = consulta.eq('sucursal_id', dto.sucursal_id);
+      if (dto.tipo) consulta = consulta.eq('tipo', dto.tipo);
+      if (dto.fecha_desde) {
+        consulta = consulta.gte(
+          'created_at',
+          rangoDiaMexico(dto.fecha_desde).inicio,
+        );
+      }
+      if (dto.fecha_hasta) {
+        consulta = consulta.lte(
+          'created_at',
+          rangoDiaMexico(dto.fecha_hasta).fin,
+        );
+      }
+      return consulta;
+    };
+    const data = await todasLasPaginas<FilaDevolucion>((desde, hasta) =>
+      armar().order('id').range(desde, hasta),
     );
+
+    const devoluciones = data.map((d) => ({
+      id: d.id,
+      folio: d.folio,
+      tipo: d.tipo,
+      monto: Number(d.monto),
+      metodo_reembolso: d.metodo_reembolso,
+      motivo: d.motivo,
+      cliente_nombre: d.cliente_nombre,
+      created_at: d.created_at,
+      sucursal: primero(d.sucursales)?.nombre ?? null,
+      venta_folio: primero(d.ventas)?.folio ?? null,
+      atendio: primero(d.solicitante)?.nombre_completo ?? null,
+      autorizo: primero(d.autorizador)?.nombre_completo ?? null,
+      items: (d.devolucion_items ?? []).map((i) => ({
+        ...marcaYModelo(i.productos),
+        cantidad: i.cantidad,
+        monto: Number(i.monto),
+        reingresa_inventario: i.reingresa_inventario,
+      })),
+    }));
 
     const total = (tipo?: string) =>
       redondear(

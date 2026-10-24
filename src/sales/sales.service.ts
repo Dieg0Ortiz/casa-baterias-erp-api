@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
 import { AuthService } from '../auth/auth.service';
+import { todasLasPaginas } from '../common/consultas';
 import { rangoDiaMexico } from '../common/fechas';
 import type {
   PerfilUsuario,
@@ -101,15 +102,17 @@ export class SalesService {
 
   // Lista de ventas del ámbito del usuario (RLS): el trabajador solo ve
   // las de su sucursal; el administrador ve las de todas.
-  async listarVentas(): Promise<Venta[] | null> {
-    const { data, error } = await this.client
-      .from('ventas')
-      .select(
-        'id, folio, sucursal_id, usuario_id, total, estado, created_at, metodo_pago, desglose_pago',
-      )
-      .order('created_at', { ascending: false });
-    this.throwIfError(error);
-    return data as Venta[];
+  async listarVentas(): Promise<Venta[]> {
+    return todasLasPaginas<Venta>((desde, hasta) =>
+      this.client
+        .from('ventas')
+        .select(
+          'id, folio, sucursal_id, usuario_id, total, estado, created_at, metodo_pago, desglose_pago',
+        )
+        .order('created_at', { ascending: false })
+        .order('id')
+        .range(desde, hasta),
+    );
   }
 
   // Ventas de hoy (hora de México), de la más reciente a la más vieja, con

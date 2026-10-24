@@ -1,6 +1,16 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { PostgrestError } from '@supabase/supabase-js';
+import { Injectable } from '@nestjs/common';
+import { todasLasPaginas } from '../common/consultas';
+import { rangoDiaMexico } from '../common/fechas';
+import { redondear } from '../common/pagos';
 import { SupabaseService } from '../supabase/supabase.service';
+
+interface FilaUtilidad {
+  cantidad: number;
+  precio_unitario: number;
+  precio_compra: number | null;
+  // Depósito de casco del renglón completo (no por pieza), desde 034.
+  comision_casco: number | null;
+}
 
 @Injectable()
 export class ReportsService {
@@ -10,66 +20,54 @@ export class ReportsService {
     return this.supabase.getClient();
   }
 
-  private throwIfError(error: PostgrestError | null) {
-    if (error) {
-      throw new BadRequestException(error.message);
-    }
-  }
-
+  // Utilidad de las ventas activas y de los intercambios de cascos en un
+  // rango de días (hora de México, ambos días incluidos).
   async obtenerUtilidades(fechaInicio?: string, fechaFin?: string) {
-    let query = this.client
-      .from('venta_items')
-      .select('id, cantidad, precio_unitario, precio_compra, comision_casco, ventas!inner(estado, created_at, sucursales(nombre))');
+    const desde = fechaInicio ? rangoDiaMexico(fechaInicio).inicio : null;
+    const hasta = fechaFin ? rangoDiaMexico(fechaFin).fin : null;
 
-    if (fechaInicio) {
-      query = query.gte('ventas.created_at', fechaInicio);
-    }
-    if (fechaFin) {
-      query = query.lte('ventas.created_at', fechaFin);
-    }
-
-    const { data, error } = await query;
-    this.throwIfError(error);
-
-    // Filtrar solo las activas
-    const items = data.filter((item: any) => item.ventas.estado === 'activa');
+    const [items, intercambios] = await Promise.all([
+      todasLasPaginas<FilaUtilidad>((inicio, fin) => {
+        let query = this.client
+          .from('venta_items')
+          .select(
+            'cantidad, precio_unitario, precio_compra, comision_casco, ventas!inner(estado, created_at)',
+          )
+          .eq('ventas.estado', 'activa');
+        if (desde) query = query.gte('ventas.created_at', desde);
+        if (hasta) query = query.lte('ventas.created_at', hasta);
+        return query.order('id').range(inicio, fin);
+      }),
+      todasLasPaginas<{ monto_cobrado: number }>((inicio, fin) => {
+        let query = this.client
+          .from('intercambios_cascos')
+          .select('monto_cobrado')
+          .eq('estado', 'completado');
+        if (desde) query = query.gte('created_at', desde);
+        if (hasta) query = query.lte('created_at', hasta);
+        return query.order('id').range(inicio, fin);
+      }),
+    ]);
 
     let totalVentas = 0;
     let totalCosto = 0;
-    let totalUtilidad = 0;
-
     for (const item of items) {
-      const cantidad = item.cantidad;
-      const venta = (item.precio_unitario * cantidad) + (item.comision_casco ?? 0);
-      const costo = (item.precio_compra * cantidad);
-      
-      totalVentas += venta;
-      totalCosto += costo;
-      totalUtilidad += (venta - costo);
+      const cantidad = Number(item.cantidad);
+      totalVentas +=
+        Number(item.precio_unitario) * cantidad +
+        Number(item.comision_casco ?? 0);
+      totalCosto += Number(item.precio_compra ?? 0) * cantidad;
     }
+    // El intercambio de cascos es un servicio: todo lo cobrado es utilidad.
+    totalVentas += intercambios.reduce(
+      (s, i) => s + (Number(i.monto_cobrado) || 0),
+      0,
+    );
 
-    // Sumar ingresos y utilidades por intercambios de cascos
-    let queryIntercambios = this.client
-      .from('intercambios_cascos')
-      .select('id, monto_cobrado, estado, created_at')
-      .eq('estado', 'completado');
-
-    if (fechaInicio) {
-      queryIntercambios = queryIntercambios.gte('created_at', fechaInicio);
-    }
-    if (fechaFin) {
-      queryIntercambios = queryIntercambios.lte('created_at', fechaFin);
-    }
-
-    const { data: intercambios, error: errorIntercambios } = await queryIntercambios;
-    if (!errorIntercambios && intercambios) {
-      for (const inc of intercambios) {
-        const monto = Number(inc.monto_cobrado) || 0;
-        totalVentas += monto;
-        totalUtilidad += monto; // 100% utilidad neta de servicio
-      }
-    }
-
-    return { totalVentas, totalCosto, totalUtilidad, items };
+    return {
+      totalVentas: redondear(totalVentas),
+      totalCosto: redondear(totalCosto),
+      totalUtilidad: redondear(totalVentas - totalCosto),
+    };
   }
 }

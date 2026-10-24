@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
+import { todasLasPaginas } from '../common/consultas';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AjustarCascoBodegaDto, BajarCascosGrupoDto, RegistrarIntercambioDto } from './cascos.dto';
 
@@ -33,34 +34,35 @@ export class CascosService {
   }
 
   async listarIntercambios() {
-    const { data, error } = await this.client
-      .from('intercambios_cascos')
-      .select(`
-        id,
-        folio,
-        sucursal_id,
-        usuario_id,
-        monto_cobrado,
-        metodo_pago,
-        cliente_nombre,
-        cliente_telefono,
-        notas,
-        estado,
-        created_at,
-        sucursales (id, nombre),
-        usuarios (id, nombre_completo),
-        intercambio_casco_items (
+    return todasLasPaginas((desde, hasta) =>
+      this.client
+        .from('intercambios_cascos')
+        .select(`
           id,
-          cantidad,
-          precio_unitario,
-          casco_saliente:productos!casco_saliente_id (id, modelo, descripcion, marcas (nombre)),
-          casco_entrante:productos!casco_entrante_id (id, modelo, descripcion, marcas (nombre))
-        )
-      `)
-      .order('created_at', { ascending: false });
-
-    this.throwIfError(error);
-    return data;
+          folio,
+          sucursal_id,
+          usuario_id,
+          monto_cobrado,
+          metodo_pago,
+          cliente_nombre,
+          cliente_telefono,
+          notas,
+          estado,
+          created_at,
+          sucursales (id, nombre),
+          usuarios (id, nombre_completo),
+          intercambio_casco_items (
+            id,
+            cantidad,
+            precio_unitario,
+            casco_saliente:productos!casco_saliente_id (id, modelo, descripcion, marcas (nombre)),
+            casco_entrante:productos!casco_entrante_id (id, modelo, descripcion, marcas (nombre))
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .order('id')
+        .range(desde, hasta),
+    );
   }
 
   async obtenerIntercambio(id: string) {

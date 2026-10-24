@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
+import { todasLasPaginas } from '../common/consultas';
 import { SupabaseService } from '../supabase/supabase.service';
 import { CrearProveedorDto, RegistrarCompraDto } from './purchases.dto';
 
@@ -61,14 +62,16 @@ export class PurchasesService {
   // ------------------------------------------------------------------
 
   async listarCompras() {
-    const { data, error } = await this.client
-      .from('compras')
-      .select(
-        'id, folio, fecha:created_at, total, estado, proveedores(nombre), sucursales(nombre), usuarios!usuario_id(nombre_completo)'
-      )
-      .order('created_at', { ascending: false });
-    this.throwIfError(error);
-    return data;
+    return todasLasPaginas((desde, hasta) =>
+      this.client
+        .from('compras')
+        .select(
+          'id, folio, fecha:created_at, total, estado, proveedores(nombre), sucursales(nombre), usuarios!usuario_id(nombre_completo)',
+        )
+        .order('created_at', { ascending: false })
+        .order('id')
+        .range(desde, hasta),
+    );
   }
 
   async obtenerCompra(id: string) {

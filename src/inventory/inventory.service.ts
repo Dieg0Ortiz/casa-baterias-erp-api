@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
+import { todasLasPaginas } from '../common/consultas';
 import { SupabaseService } from '../supabase/supabase.service';
 import {
   CargarExistenciasMasivoDto,
@@ -73,21 +74,25 @@ export class InventoryService {
   // RLS filtra por sucursal: el trabajador solo ve la suya; el
   // administrador ve todas. El filtro `sucursal_id` es opcional.
   async listarInventario(sucursalId?: string) {
-    let query = this.client
-      .from('inventario')
-      .select(
-        'sucursal_id, cantidad, cascos_disponibles, productos(id, modelo, codigo_barras, precio, precio_2, precio_3, comision_casco, requiere_casco, marcas(nombre))',
-      );
-    if (sucursalId) {
-      query = query.eq('sucursal_id', sucursalId);
-    }
-    const { data, error } = await query;
-    this.throwIfError(error);
+    const armar = () => {
+      let query = this.client
+        .from('inventario')
+        .select(
+          'sucursal_id, cantidad, cascos_disponibles, productos(id, modelo, codigo_barras, precio, precio_2, precio_3, comision_casco, requiere_casco, marcas(nombre))',
+        );
+      if (sucursalId) {
+        query = query.eq('sucursal_id', sucursalId);
+      }
+      return query;
+    };
+    const data = await todasLasPaginas<FilaInventario>((desde, hasta) =>
+      armar().order('id').range(desde, hasta),
+    );
 
     // PostgREST devuelve los embeds to-one como objeto (igual que `marcas`
     // en el catálogo); la inferencia de supabase-js sin schema los tipa
     // como array, por eso el cast pasa por `unknown`.
-    const filas = (data ?? []) as unknown as FilaInventario[];
+    const filas = data;
     return filas.map((fila) => ({
       sucursal_id: fila.sucursal_id,
       producto_id: fila.productos?.id ?? null,
@@ -200,34 +205,36 @@ export class InventoryService {
   // Historial de transferencias (solo administrador). Se componen los
   // nombres de producto, sucursales y autorizador a partir de consultas
   // simples (RLS permite al admin leerlas) para evitar joins ambiguos
-  // con dos llaves foráneas hacia la misma tabla.
+  // con dos llaves foráneas hacia la misma tabla. Los productos van todos,
+  // también los dados de baja: un traspaso viejo sigue teniendo nombre.
   async listarTransferencias() {
-    const [transferencias, productos, sucursales, usuarios] = await Promise.all(
-      [
-        this.client
-          .from('transferencias')
-          .select(
-            'id, producto_id, sucursal_origen_id, sucursal_destino_id, cantidad, autorizado_por, nota, created_at',
-          )
-          .order('created_at', { ascending: false }),
-        this.client.from('productos').select('id, modelo').eq('activo', true),
+    const [filasTransferencias, productos, sucursales, usuarios] =
+      await Promise.all([
+        todasLasPaginas<FilaTransferencia>((desde, hasta) =>
+          this.client
+            .from('transferencias')
+            .select(
+              'id, producto_id, sucursal_origen_id, sucursal_destino_id, cantidad, autorizado_por, nota, created_at',
+            )
+            .order('created_at', { ascending: false })
+            .order('id')
+            .range(desde, hasta),
+        ),
+        todasLasPaginas<{ id: string; modelo: string }>((desde, hasta) =>
+          this.client
+            .from('productos')
+            .select('id, modelo')
+            .order('id')
+            .range(desde, hasta),
+        ),
         this.client.from('sucursales').select('id, nombre'),
         this.client.from('usuarios').select('id, nombre_completo'),
-      ],
-    );
+      ]);
 
-    this.throwIfError(transferencias.error);
-    this.throwIfError(productos.error);
     this.throwIfError(sucursales.error);
     this.throwIfError(usuarios.error);
 
-    const filasTransferencias = (transferencias.data ??
-      []) as unknown as FilaTransferencia[];
-    const mapaProductos = new Map(
-      ((productos.data ?? []) as Array<{ id: string; modelo: string }>).map(
-        (p) => [p.id, p.modelo],
-      ),
-    );
+    const mapaProductos = new Map(productos.map((p) => [p.id, p.modelo]));
     const mapaSucursales = new Map(
       ((sucursales.data ?? []) as Array<{ id: string; nombre: string }>).map(
         (s) => [s.id, s.nombre],

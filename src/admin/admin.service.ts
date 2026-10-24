@@ -125,17 +125,21 @@ export class AdminService {
   async dashboard() {
     const hoy = this.rangoDiaMexico();
 
-    const [resSucursales, resInventario, resVentasHoy, resCajas, resUsuarios] =
+    const [resSucursales, inventario, resVentasHoy, resCajas, resUsuarios] =
       await Promise.all([
         this.client
           .from('sucursales')
           .select('id, nombre, es_matriz')
           .order('nombre'),
-        this.client
-          .from('inventario')
-          .select(
-            'sucursal_id, cantidad, cascos_disponibles, productos(id, precio, modelo)',
-          ),
+        todasLasPaginas<FilaInventario>((desde, hasta) =>
+          this.client
+            .from('inventario')
+            .select(
+              'sucursal_id, cantidad, cascos_disponibles, productos(id, precio, modelo)',
+            )
+            .order('id')
+            .range(desde, hasta),
+        ),
         this.client
           .from('ventas')
           .select(
@@ -152,15 +156,12 @@ export class AdminService {
       ]);
 
     this.throwIfError(resSucursales.error);
-    this.throwIfError(resInventario.error);
     this.throwIfError(resVentasHoy.error);
     this.throwIfError(resCajas.error);
     this.throwIfError(resUsuarios.error);
 
     const sucursales = (resSucursales.data ?? []) as FilaSucursal[];
     const cortes = (resCajas.data ?? []) as FilaCorte[];
-    const inventario = (resInventario.data ??
-      []) as unknown as FilaInventario[];
     const ventasHoy = (resVentasHoy.data ?? []) as FilaVenta[];
     const nombreUsuario = new Map(
       (
@@ -304,10 +305,7 @@ export class AdminService {
   async listarSucursales() {
     const [resSucursales, resUsuarios] = await Promise.all([
       this.client.from('sucursales').select(COLUMNAS_SUCURSAL).order('nombre'),
-      this.client
-        .from('usuarios')
-        .select('sucursal_id')
-        .eq('activo', true),
+      this.client.from('usuarios').select('sucursal_id').eq('activo', true),
     ]);
     this.throwIfError(resSucursales.error);
 
@@ -467,7 +465,9 @@ export class AdminService {
       nombre_completo: u.nombre_completo,
       rol: u.rol,
       sucursal_id: u.sucursal_id,
-      sucursal: u.sucursal_id ? nombreSucursal.get(u.sucursal_id) ?? null : null,
+      sucursal: u.sucursal_id
+        ? (nombreSucursal.get(u.sucursal_id) ?? null)
+        : null,
       activo: u.activo,
       created_at: u.created_at ?? null,
     }));
@@ -499,7 +499,8 @@ export class AdminService {
       });
 
     if (authError || !authData.user) {
-      const msg = authError?.message ?? 'Error al crear usuario en autenticación';
+      const msg =
+        authError?.message ?? 'Error al crear usuario en autenticación';
       throw new BadRequestException(
         msg.includes('already registered') || msg.includes('already exists')
           ? 'Ya existe un usuario registrado con este correo electrónico.'
@@ -510,15 +511,13 @@ export class AdminService {
     const userId = authData.user.id;
 
     // 2. Insertar / Actualizar fila en la tabla pública `usuarios`
-    const { error: perfilError } = await serviceClient
-      .from('usuarios')
-      .upsert({
-        id: userId,
-        nombre_completo: nombreCompleto,
-        rol,
-        sucursal_id: dto.sucursal_id || null,
-        activo: true,
-      });
+    const { error: perfilError } = await serviceClient.from('usuarios').upsert({
+      id: userId,
+      nombre_completo: nombreCompleto,
+      rol,
+      sucursal_id: dto.sucursal_id || null,
+      activo: true,
+    });
 
     if (perfilError) {
       // Revertir usuario de auth si falló la creación del perfil
@@ -543,7 +542,8 @@ export class AdminService {
 
     const updates: Record<string, any> = {};
     if (dto.nombre !== undefined || dto.apellido !== undefined) {
-      const nombreCompleto = `${dto.nombre?.trim() ?? ''} ${dto.apellido?.trim() ?? ''}`.trim();
+      const nombreCompleto =
+        `${dto.nombre?.trim() ?? ''} ${dto.apellido?.trim() ?? ''}`.trim();
       if (nombreCompleto) updates.nombre_completo = nombreCompleto;
     }
     if (dto.rol !== undefined) updates.rol = dto.rol;
@@ -560,10 +560,12 @@ export class AdminService {
 
     // Actualizar contraseña si se envió
     if (dto.password) {
-      const { error: pwdError } =
-        await serviceClient.auth.admin.updateUserById(id, {
+      const { error: pwdError } = await serviceClient.auth.admin.updateUserById(
+        id,
+        {
           password: dto.password,
-        });
+        },
+      );
       if (pwdError) {
         throw new BadRequestException(
           `Error al actualizar contraseña: ${pwdError.message}`,
@@ -761,7 +763,9 @@ export class AdminService {
     const productoIds = [
       ...new Set([
         ...cascos.map((c) => c.producto_id),
-        ...cascos.map((c) => c.casco_producto_id).filter((id): id is string => Boolean(id)),
+        ...cascos
+          .map((c) => c.casco_producto_id)
+          .filter((id): id is string => Boolean(id)),
       ]),
     ];
     const sucursalIds = [...new Set(cascos.map((c) => c.sucursal_id))];
@@ -817,7 +821,7 @@ export class AdminService {
       producto: nombreProducto.get(c.producto_id) ?? null,
       casco_producto_id: c.casco_producto_id ?? null,
       casco_recibido: c.casco_producto_id
-        ? nombreProducto.get(c.casco_producto_id) ?? null
+        ? (nombreProducto.get(c.casco_producto_id) ?? null)
         : null,
       sucursal: nombreSucursal.get(c.sucursal_id) ?? null,
       comision_cobrada: Number(c.comision_cobrada),
@@ -828,7 +832,7 @@ export class AdminService {
       telefono_cliente: c.telefono_cliente,
       notas: c.notas,
       resuelto_por: c.resuelto_por
-        ? nombreUsuario.get(c.resuelto_por) ?? null
+        ? (nombreUsuario.get(c.resuelto_por) ?? null)
         : null,
       resuelto_en: c.resuelto_en,
       created_at: c.created_at,
@@ -836,15 +840,12 @@ export class AdminService {
   }
 
   async resolverCasco(cascoId: string, dto: ResolverCascoDto) {
-    const { data, error } = (await this.client.rpc(
-      'resolver_casco_pendiente',
-      {
-        p_casco_id: cascoId,
-        p_monto_devuelto: dto.monto_devuelto,
-        p_casco_producto_id: dto.casco_producto_id ?? null,
-        p_notas: dto.notas ?? null,
-      },
-    )) as { data: unknown; error: PostgrestError | null };
+    const { data, error } = (await this.client.rpc('resolver_casco_pendiente', {
+      p_casco_id: cascoId,
+      p_monto_devuelto: dto.monto_devuelto,
+      p_casco_producto_id: dto.casco_producto_id ?? null,
+      p_notas: dto.notas ?? null,
+    })) as { data: unknown; error: PostgrestError | null };
     if (error) {
       const detalle = (error.details ?? '').trim();
       throw new BadRequestException(
@@ -855,37 +856,45 @@ export class AdminService {
   }
 
   async reporteAltas(dto: AltasReporteDto) {
-    let query = this.client
-      .from('altas_inventario')
-      .select(
-        'folio, origen, modo, cantidad, existencia_anterior, existencia_nueva, nota, referencia, created_at, sucursales(nombre), usuarios(nombre_completo), productos(modelo, codigo_barras, marcas(nombre))',
-      )
-      .order('created_at', { ascending: false })
-      .limit(5000);
+    const armar = () => {
+      let query = this.client
+        .from('altas_inventario')
+        .select(
+          'folio, origen, modo, cantidad, existencia_anterior, existencia_nueva, nota, referencia, created_at, sucursales(nombre), usuarios(nombre_completo), productos(modelo, codigo_barras, marcas(nombre))',
+        )
+        .order('created_at', { ascending: false });
 
-    if (dto.sucursal_id) query = query.eq('sucursal_id', dto.sucursal_id);
-    if (dto.producto_id) query = query.eq('producto_id', dto.producto_id);
-    if (dto.origen) query = query.eq('origen', dto.origen);
-    if (dto.fecha_desde) {
-      query = query.gte('created_at', this.rangoDiaMexico(dto.fecha_desde).inicio);
-    }
-    if (dto.fecha_hasta) {
-      query = query.lte('created_at', this.rangoDiaMexico(dto.fecha_hasta).fin);
-    }
+      if (dto.sucursal_id) query = query.eq('sucursal_id', dto.sucursal_id);
+      if (dto.producto_id) query = query.eq('producto_id', dto.producto_id);
+      if (dto.origen) query = query.eq('origen', dto.origen);
+      if (dto.fecha_desde) {
+        query = query.gte(
+          'created_at',
+          this.rangoDiaMexico(dto.fecha_desde).inicio,
+        );
+      }
+      if (dto.fecha_hasta) {
+        query = query.lte(
+          'created_at',
+          this.rangoDiaMexico(dto.fecha_hasta).fin,
+        );
+      }
+      return query;
+    };
+    const data = await todasLasPaginas<FilaAltaInventario>((desde, hasta) =>
+      armar().order('id').range(desde, hasta),
+    );
 
-    const { data, error } = await query;
-    this.throwIfError(error);
-
-    const filas = (data ?? []) as unknown as FilaAltaInventario[];
+    const filas = data;
     const folios = new Set<string>();
     let unidades = 0;
     const lineas = filas.map((fila) => {
       folios.add(fila.folio);
       unidades += fila.cantidad;
       const marcas = fila.productos?.marcas;
-      const marca = (
-        Array.isArray(marcas) ? marcas[0]?.nombre : marcas?.nombre
-      )?.trim() || null;
+      const marca =
+        (Array.isArray(marcas) ? marcas[0]?.nombre : marcas?.nombre)?.trim() ||
+        null;
       const sucursal = fila.sucursales;
       const usuario = fila.usuarios;
       return {
@@ -922,26 +931,34 @@ export class AdminService {
   }
 
   async reporteReimpresiones(dto: VentasReporteDto) {
-    let query = this.client
-      .from('reimpresiones_ticket')
-      .select(
-        'id, folio, numero, motivo, created_at, sucursales(nombre), solicitante:usuarios!reimpresiones_ticket_solicitado_por_fkey(nombre_completo), autorizador:usuarios!reimpresiones_ticket_autorizado_por_fkey(nombre_completo), ventas(total, created_at)',
-      )
-      .order('created_at', { ascending: false })
-      .limit(500);
+    const armar = () => {
+      let query = this.client
+        .from('reimpresiones_ticket')
+        .select(
+          'id, folio, numero, motivo, created_at, sucursales(nombre), solicitante:usuarios!reimpresiones_ticket_solicitado_por_fkey(nombre_completo), autorizador:usuarios!reimpresiones_ticket_autorizado_por_fkey(nombre_completo), ventas(total, created_at)',
+        )
+        .order('created_at', { ascending: false });
 
-    if (dto.fecha_desde) {
-      query = query.gte('created_at', this.rangoDiaMexico(dto.fecha_desde).inicio);
-    }
-    if (dto.fecha_hasta) {
-      query = query.lte('created_at', this.rangoDiaMexico(dto.fecha_hasta).fin);
-    }
-    if (dto.sucursal_id) query = query.eq('sucursal_id', dto.sucursal_id);
+      if (dto.fecha_desde) {
+        query = query.gte(
+          'created_at',
+          this.rangoDiaMexico(dto.fecha_desde).inicio,
+        );
+      }
+      if (dto.fecha_hasta) {
+        query = query.lte(
+          'created_at',
+          this.rangoDiaMexico(dto.fecha_hasta).fin,
+        );
+      }
+      if (dto.sucursal_id) query = query.eq('sucursal_id', dto.sucursal_id);
+      return query;
+    };
+    const data = await todasLasPaginas<FilaReimpresion>((desde, hasta) =>
+      armar().order('id').range(desde, hasta),
+    );
 
-    const { data, error } = await query;
-    this.throwIfError(error);
-
-    const filas = (data ?? []) as unknown as FilaReimpresion[];
+    const filas = data;
     const reimpresiones = filas.map((fila) => {
       const sucursal = fila.sucursales;
       const solicito = fila.solicitante;
@@ -978,40 +995,46 @@ export class AdminService {
 
   // Tickets cancelados: quién la pidió, qué administrador la autorizó y por qué.
   async reporteCancelaciones(dto: VentasReporteDto) {
-    let query = this.client
-      .from('ventas')
-      .select(
-        'id, folio, total, metodo_pago, created_at, cancelled_at, motivo_cancelacion, sucursales(nombre), solicitante:usuarios!ventas_cancelacion_solicitada_por_fkey(nombre_completo), autorizador:usuarios!ventas_cancelled_by_fkey(nombre_completo)',
-      )
-      .eq('estado', 'cancelada')
-      .order('cancelled_at', { ascending: false })
-      .limit(1000);
+    const armar = () => {
+      let query = this.client
+        .from('ventas')
+        .select(
+          'id, folio, total, metodo_pago, created_at, cancelled_at, motivo_cancelacion, sucursales(nombre), solicitante:usuarios!ventas_cancelacion_solicitada_por_fkey(nombre_completo), autorizador:usuarios!ventas_cancelled_by_fkey(nombre_completo)',
+        )
+        .eq('estado', 'cancelada')
+        .order('cancelled_at', { ascending: false });
 
-    if (dto.fecha_desde) {
-      query = query.gte('cancelled_at', this.rangoDiaMexico(dto.fecha_desde).inicio);
-    }
-    if (dto.fecha_hasta) {
-      query = query.lte('cancelled_at', this.rangoDiaMexico(dto.fecha_hasta).fin);
-    }
-    if (dto.sucursal_id) query = query.eq('sucursal_id', dto.sucursal_id);
-
-    const { data, error } = await query;
-    this.throwIfError(error);
-
-    const cancelaciones = ((data ?? []) as unknown as FilaCancelacion[]).map(
-      (v) => ({
-        id: v.id,
-        folio: v.folio,
-        total: Number(v.total),
-        metodo_pago: v.metodo_pago ?? 'efectivo',
-        vendida_en: v.created_at,
-        cancelada_en: v.cancelled_at,
-        motivo: v.motivo_cancelacion,
-        sucursal: primero(v.sucursales)?.nombre ?? null,
-        solicito: primero(v.solicitante)?.nombre_completo ?? null,
-        autorizo: primero(v.autorizador)?.nombre_completo ?? null,
-      }),
+      if (dto.fecha_desde) {
+        query = query.gte(
+          'cancelled_at',
+          this.rangoDiaMexico(dto.fecha_desde).inicio,
+        );
+      }
+      if (dto.fecha_hasta) {
+        query = query.lte(
+          'cancelled_at',
+          this.rangoDiaMexico(dto.fecha_hasta).fin,
+        );
+      }
+      if (dto.sucursal_id) query = query.eq('sucursal_id', dto.sucursal_id);
+      return query;
+    };
+    const data = await todasLasPaginas<FilaCancelacion>((desde, hasta) =>
+      armar().order('id').range(desde, hasta),
     );
+
+    const cancelaciones = data.map((v) => ({
+      id: v.id,
+      folio: v.folio,
+      total: Number(v.total),
+      metodo_pago: v.metodo_pago ?? 'efectivo',
+      vendida_en: v.created_at,
+      cancelada_en: v.cancelled_at,
+      motivo: v.motivo_cancelacion,
+      sucursal: primero(v.sucursales)?.nombre ?? null,
+      solicito: primero(v.solicitante)?.nombre_completo ?? null,
+      autorizo: primero(v.autorizador)?.nombre_completo ?? null,
+    }));
 
     return {
       cancelaciones,
