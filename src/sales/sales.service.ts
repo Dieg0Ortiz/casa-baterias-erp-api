@@ -245,14 +245,18 @@ export class SalesService {
     );
     const folio = normalizarFolio(dto.folio);
 
-    const { data: venta, error: errorVenta } = await this.client
+    const { data, error: errorVenta } = await this.client
       .from('ventas')
-      .select(
-        'id, folio, sucursal_id, total, estado, created_at, metodo_pago, desglose_pago, usuario_id',
-      )
+      .select('id, folio, sucursal_id, estado')
       .eq('folio', folio)
       .maybeSingle();
     this.throwIfError(errorVenta);
+    const venta = data as {
+      id: string;
+      folio: string;
+      sucursal_id: string;
+      estado: string;
+    } | null;
     if (!venta) {
       throw new NotFoundException(
         'No hay una venta con ese folio en tu sucursal',
@@ -261,29 +265,6 @@ export class SalesService {
     if (venta.estado === 'cancelada') {
       throw new BadRequestException('Esa venta está cancelada');
     }
-
-    const { data: items, error: errorItems } = await this.client
-      .from('venta_items')
-      .select(
-        'cantidad, precio_unitario, tipo_precio, con_casco, comision_casco, productos(modelo, marcas(nombre))',
-      )
-      .eq('venta_id', venta.id);
-    this.throwIfError(errorItems);
-
-    const [sucursalRes, cajeroRes] = await Promise.all([
-      this.client
-        .from('sucursales')
-        .select('nombre, direccion, leyenda_ticket')
-        .eq('id', venta.sucursal_id)
-        .maybeSingle(),
-      this.client
-        .from('usuarios')
-        .select('nombre_completo')
-        .eq('id', venta.usuario_id)
-        .maybeSingle(),
-    ]);
-    this.throwIfError(sucursalRes.error);
-    this.throwIfError(cajeroRes.error);
 
     const servicio = this.supabase.getServiceClient();
     const { count, error: errorConteo } = await servicio
@@ -306,46 +287,103 @@ export class SalesService {
       });
     this.throwIfError(errorAlta);
 
-    const lineas = ((items ?? []) as unknown as FilaItemReimpresion[]).map(
-      (item) => {
-        const marcas = item.productos?.marcas;
-        const marca =
-          (Array.isArray(marcas) ? marcas[0]?.nombre : marcas?.nombre)?.trim() ||
-          null;
-        const cantidad = Number(item.cantidad);
-        const comisionLinea = Number(item.comision_casco ?? 0);
-        return {
-          marca,
-          modelo: item.productos?.modelo ?? null,
-          cantidad,
-          precio_unitario: Number(item.precio_unitario),
-          tipo_precio: item.tipo_precio ?? 'default',
-          con_casco: item.con_casco ?? null,
-          comision_casco: cantidad > 0 ? comisionLinea / cantidad : 0,
-        };
-      },
-    );
-
     return {
       numero,
       autorizo: autorizador.nombre_completo,
       motivo: dto.motivo.trim(),
-      venta: {
-        folio: venta.folio,
-        total: Number(venta.total),
-        estado: venta.estado,
-        created_at: venta.created_at,
-        metodo_pago: venta.metodo_pago ?? 'efectivo',
-        desglose_pago: (venta.desglose_pago ?? null) as Venta['desglose_pago'],
-        sucursal: sucursalRes.data?.nombre ?? null,
-        direccion: sucursalRes.data?.direccion ?? null,
-        leyenda_ticket: (sucursalRes.data?.leyenda_ticket ?? null) as
-          string | null,
-        empleado: cajeroRes.data?.nombre_completo ?? null,
-        items: lineas,
-      },
+      venta: await this.datosTicket(venta.id),
     };
   }
+
+  // Lo que lleva el papel de una venta ya cobrada: encabezado de la
+  // sucursal (con su garantía), cajero, forma de pago y renglones. Lo usan
+  // la reimpresión con clave y la autorizada a distancia.
+  async datosTicket(ventaId: string) {
+    const { data, error: errorVenta } = await this.client
+      .from('ventas')
+      .select(
+        'id, folio, sucursal_id, total, estado, created_at, metodo_pago, desglose_pago, usuario_id',
+      )
+      .eq('id', ventaId)
+      .maybeSingle();
+    this.throwIfError(errorVenta);
+    const venta = data as FilaVentaTicket | null;
+    if (!venta) {
+      throw new NotFoundException('Venta no encontrada');
+    }
+
+    const [itemsRes, sucursalRes, cajeroRes] = await Promise.all([
+      this.client
+        .from('venta_items')
+        .select(
+          'cantidad, precio_unitario, tipo_precio, con_casco, comision_casco, productos(modelo, marcas(nombre))',
+        )
+        .eq('venta_id', venta.id),
+      this.client
+        .from('sucursales')
+        .select('nombre, direccion, leyenda_ticket')
+        .eq('id', venta.sucursal_id)
+        .maybeSingle(),
+      this.client
+        .from('usuarios')
+        .select('nombre_completo')
+        .eq('id', venta.usuario_id)
+        .maybeSingle(),
+    ]);
+    this.throwIfError(itemsRes.error);
+    this.throwIfError(sucursalRes.error);
+    this.throwIfError(cajeroRes.error);
+    const sucursal = sucursalRes.data as {
+      nombre: string | null;
+      direccion: string | null;
+      leyenda_ticket: string | null;
+    } | null;
+    const cajero = cajeroRes.data as { nombre_completo: string | null } | null;
+
+    const lineas = (
+      (itemsRes.data ?? []) as unknown as FilaItemReimpresion[]
+    ).map((item) => {
+      const { marca, modelo } = marcaYModelo(item.productos);
+      const cantidad = Number(item.cantidad);
+      // comision_casco se guarda por renglón; el ticket la quiere por pieza.
+      const comisionLinea = Number(item.comision_casco ?? 0);
+      return {
+        marca,
+        modelo,
+        cantidad,
+        precio_unitario: Number(item.precio_unitario),
+        tipo_precio: item.tipo_precio ?? 'default',
+        con_casco: item.con_casco ?? null,
+        comision_casco: cantidad > 0 ? comisionLinea / cantidad : 0,
+      };
+    });
+
+    return {
+      folio: venta.folio,
+      total: Number(venta.total),
+      estado: venta.estado,
+      created_at: venta.created_at,
+      metodo_pago: venta.metodo_pago ?? 'efectivo',
+      desglose_pago: venta.desglose_pago ?? null,
+      sucursal: sucursal?.nombre ?? null,
+      direccion: sucursal?.direccion ?? null,
+      leyenda_ticket: sucursal?.leyenda_ticket ?? null,
+      empleado: cajero?.nombre_completo ?? null,
+      items: lineas,
+    };
+  }
+}
+
+interface FilaVentaTicket {
+  id: string;
+  folio: string;
+  sucursal_id: string;
+  total: number;
+  estado: string;
+  created_at: string;
+  metodo_pago: string | null;
+  desglose_pago: Venta['desglose_pago'] | null;
+  usuario_id: string;
 }
 
 interface FilaVentaDelDia {
